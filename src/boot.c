@@ -16,6 +16,9 @@
  * along with Quibble.  If not, see <http://www.gnu.org/licenses/>. */
 
 #include <stdint.h>
+#include <string.h>
+#include <wchar.h>
+#include <intrin.h>
 #include "quibble.h"
 #include "reg.h"
 #include "peload.h"
@@ -64,6 +67,7 @@ typedef struct {
     NLS_DATA_BLOCK nls;
     ARC_DISK_INFORMATION arc_disk_information;
     LOADER_PERFORMANCE_DATA loader_performance_data;
+    DEBUG_DEVICE_DESCRIPTOR debug_device_descriptor;
 #if 0
     BOOT_GRAPHICS_CONTEXT bgc;
 #endif
@@ -88,6 +92,10 @@ size_t errata_inf_size = 0;
 LIST_ENTRY images;
 void* stack;
 EFI_HANDLE image_handle;
+bool kdnet_loaded = false;
+static DEBUG_DEVICE_DESCRIPTOR debug_device_descriptor;
+image* kdstub = NULL;
+uint64_t cpu_frequency;
 
 typedef void (EFIAPI* change_stack_cb) (
     EFI_BOOT_SERVICES* bs,
@@ -178,46 +186,28 @@ static void get_system_time(int64_t* time) {
 }
 
 static uint64_t get_cpu_frequency(EFI_BOOT_SERVICES* bs) {
-    uint32_t tsc1a, tsc1b, tsc2a, tsc2b;
     uint64_t tsc1, tsc2;
 
     static const UINTN delay = 50; // 50 ms
 
     // FIXME - should probably do cpuid to check that rdtsc is available
 
-    __asm__ __volatile__ (
-        "rdtsc\n\t"
-        "mov %0, eax\n\t"
-        "mov %1, edx\n\t"
-        :
-        : "m" (tsc1a), "m" (tsc1b)
-        : "eax", "edx"
-    );
+    tsc1 = __rdtsc();
 
     bs->Stall(delay * 1000);
 
-    __asm__ __volatile__ (
-        "rdtsc\n\t"
-        "mov %0, eax\n\t"
-        "mov %1, edx\n\t"
-        :
-        : "m" (tsc2a), "m" (tsc2b)
-        : "eax", "edx"
-    );
-
-    tsc1 = ((uint64_t)tsc1b << 32) | tsc1a;
-    tsc2 = ((uint64_t)tsc2b << 32) | tsc2a;
+    tsc2 = __rdtsc();
 
     return (tsc2 - tsc1) * (1000 / delay);
 }
 
 static loader_store* initialize_loader_block(EFI_BOOT_SERVICES* bs, char* options, char* path, char* arc_name, unsigned int* store_pages,
                                              void** va, LIST_ENTRY* mappings, LIST_ENTRY* drivers, EFI_HANDLE image_handle,
-                                             uint16_t version, uint16_t build, LOADER_BLOCK1A** pblock1a, LOADER_BLOCK1B** pblock1b,
-                                             void*** registry_base, uint32_t** registry_length, LOADER_BLOCK2** pblock2,
-                                             LOADER_EXTENSION_BLOCK1A** pextblock1a, LOADER_EXTENSION_BLOCK1B** pextblock1b,
-                                             LOADER_EXTENSION_BLOCK3** pextblock3, uintptr_t** ploader_pages_spanned,
-                                             LIST_ENTRY* core_drivers) {
+                                             uint16_t version, uint16_t build, uint16_t revision, LOADER_BLOCK1A** pblock1a,
+                                             LOADER_BLOCK1B** pblock1b, void*** registry_base, uint32_t** registry_length,
+                                             LOADER_BLOCK2** pblock2, LOADER_EXTENSION_BLOCK1A** pextblock1a,
+                                             LOADER_EXTENSION_BLOCK1B** pextblock1b, LOADER_EXTENSION_BLOCK3** pextblock3,
+                                             uintptr_t** ploader_pages_spanned, LIST_ENTRY* core_drivers) {
     EFI_STATUS Status;
     EFI_PHYSICAL_ADDRESS addr;
     loader_store* store;
@@ -249,6 +239,8 @@ static loader_store* initialize_loader_block(EFI_BOOT_SERVICES* bs, char* option
     store = (loader_store*)(uintptr_t)addr;
 
     memset(store, 0, sizeof(loader_store));
+
+    cpu_frequency = get_cpu_frequency(bs);
 
     if (version <= _WIN32_WINNT_WS03) {
         block1a = &store->loader_block_ws03.Block1a;
@@ -335,7 +327,7 @@ static loader_store* initialize_loader_block(EFI_BOOT_SERVICES* bs, char* option
         store->extension_win7.TpmBootEntropyResult.ResultCode = TpmBootEntropyNoTpmFound;
         store->extension_win7.TpmBootEntropyResult.ResultStatus = STATUS_NOT_IMPLEMENTED;
 
-        store->extension_win7.ProcessorCounterFrequency = get_cpu_frequency(bs);
+        store->extension_win7.ProcessorCounterFrequency = cpu_frequency;
 
         *registry_base = &store->loader_block_win7.RegistryBase;
         *registry_length = &store->loader_block_win7.RegistryLength;
@@ -384,7 +376,7 @@ static loader_store* initialize_loader_block(EFI_BOOT_SERVICES* bs, char* option
         InitializeListHead(&store->loader_block_win8.FirmwareInformation.EfiInformation.FirmwareResourceList);
 
         store->extension_win8.LoaderPerformanceData = &store->loader_performance_data;
-        store->extension_win8.ProcessorCounterFrequency = get_cpu_frequency(bs);
+        store->extension_win8.ProcessorCounterFrequency = cpu_frequency;
     } else if (version == _WIN32_WINNT_WINBLUE) {
         block1a = &store->loader_block_win81.Block1a;
         block1b = &store->loader_block_win81.Block1b;
@@ -398,7 +390,11 @@ static loader_store* initialize_loader_block(EFI_BOOT_SERVICES* bs, char* option
         extblock4 = &store->extension_win81.Block4;
         extblock5a = &store->extension_win81.Block5a;
 
-        store->extension_win81.Size = sizeof(LOADER_PARAMETER_EXTENSION_WIN81);
+        if (revision >= 18438)
+            store->extension_win81.Size = sizeof(LOADER_PARAMETER_EXTENSION_WIN81);
+        else
+            store->extension_win81.Size = offsetof(LOADER_PARAMETER_EXTENSION_WIN81, padding4);
+
         store->extension_win81.Profile.Status = 2;
 
         store->loader_block_win81.OsMajorVersion = version >> 8;
@@ -425,8 +421,15 @@ static loader_store* initialize_loader_block(EFI_BOOT_SERVICES* bs, char* option
         InitializeListHead(&store->loader_block_win81.FirmwareInformation.EfiInformation.FirmwareResourceList);
 
         store->extension_win81.LoaderPerformanceData = &store->loader_performance_data;
-        store->extension_win81.ProcessorCounterFrequency = get_cpu_frequency(bs);
+        store->extension_win81.ProcessorCounterFrequency = cpu_frequency;
+
+        if (kdnet_loaded) {
+            memcpy(&store->debug_device_descriptor, &debug_device_descriptor, sizeof(debug_device_descriptor));
+            store->extension_win81.KdDebugDevice = &store->debug_device_descriptor;
+        }
     } else if (version == _WIN32_WINNT_WIN10) {
+        LOADER_EXTENSION_BLOCK6* extblock6;
+
         block1a = &store->loader_block_win10.Block1a;
         block1b = &store->loader_block_win10.Block1b;
         block1c = &store->loader_block_win10.Block1c;
@@ -470,6 +473,7 @@ static loader_store* initialize_loader_block(EFI_BOOT_SERVICES* bs, char* option
             extblock3 = &store->extension_win10_1903.Block3;
             extblock4 = &store->extension_win10_1903.Block4;
             extblock5a = &store->extension_win10_1903.Block5a;
+            extblock6 = &store->extension_win10_1903.Block6;
             store->extension_win10_1903.Size = sizeof(LOADER_PARAMETER_EXTENSION_WIN10_1903);
 
             store->extension_win10_1903.Profile.Status = 2;
@@ -477,7 +481,7 @@ static loader_store* initialize_loader_block(EFI_BOOT_SERVICES* bs, char* option
 
             // contrary to what you might expect, both 1903 and 1909 use the same value here
             store->extension_win10_1903.MajorRelease = NTDDI_WIN10_19H1;
-            store->extension_win10_1903.ProcessorCounterFrequency = get_cpu_frequency(bs);
+            store->extension_win10_1903.ProcessorCounterFrequency = cpu_frequency;
         } else if (build == WIN10_BUILD_1809) {
             extblock1a = &store->extension_win10_1809.Block1a;
             extblock1b = &store->extension_win10_1809.Block1b;
@@ -485,12 +489,13 @@ static loader_store* initialize_loader_block(EFI_BOOT_SERVICES* bs, char* option
             extblock3 = &store->extension_win10_1809.Block3;
             extblock4 = &store->extension_win10_1809.Block4;
             extblock5a = &store->extension_win10_1809.Block5a;
+            extblock6 = &store->extension_win10_1809.Block6;
             store->extension_win10_1809.Size = sizeof(LOADER_PARAMETER_EXTENSION_WIN10_1809);
 
             store->extension_win10_1809.Profile.Status = 2;
             store->extension_win10_1809.BootEntropyResult.maxEntropySources = 10;
             store->extension_win10_1809.MajorRelease = NTDDI_WIN10_RS5;
-            store->extension_win10_1809.ProcessorCounterFrequency = get_cpu_frequency(bs);
+            store->extension_win10_1809.ProcessorCounterFrequency = cpu_frequency;
         } else if (build >= WIN10_BUILD_1703) {
             extblock1a = &store->extension_win10_1703.Block1a;
             extblock1b = &store->extension_win10_1703.Block1b;
@@ -498,6 +503,7 @@ static loader_store* initialize_loader_block(EFI_BOOT_SERVICES* bs, char* option
             extblock3 = &store->extension_win10_1703.Block3;
             extblock4 = &store->extension_win10_1703.Block4;
             extblock5a = &store->extension_win10_1703.Block5a;
+            extblock6 = &store->extension_win10_1703.Block6;
 
             if (build >= WIN10_BUILD_1803)
                 store->extension_win10_1703.Size = sizeof(LOADER_PARAMETER_EXTENSION_WIN10_1703);
@@ -516,7 +522,7 @@ static loader_store* initialize_loader_block(EFI_BOOT_SERVICES* bs, char* option
                 store->extension_win10_1703.MajorRelease = NTDDI_WIN10_RS4;
 
             store->extension_win10_1703.LoaderPerformanceData = &store->loader_performance_data;
-            store->extension_win10_1703.ProcessorCounterFrequency = get_cpu_frequency(bs);
+            store->extension_win10_1703.ProcessorCounterFrequency = cpu_frequency;
         } else if (build >= WIN10_BUILD_1607) {
             extblock1a = &store->extension_win10_1607.Block1a;
             extblock1b = &store->extension_win10_1607.Block1b;
@@ -524,6 +530,7 @@ static loader_store* initialize_loader_block(EFI_BOOT_SERVICES* bs, char* option
             extblock3 = &store->extension_win10_1607.Block3;
             extblock4 = &store->extension_win10_1607.Block4;
             extblock5a = &store->extension_win10_1607.Block5a;
+            extblock6 = &store->extension_win10_1607.Block6;
             store->extension_win10_1607.Size = sizeof(LOADER_PARAMETER_EXTENSION_WIN10_1607);
 
             store->extension_win10_1607.Profile.Status = 2;
@@ -533,7 +540,7 @@ static loader_store* initialize_loader_block(EFI_BOOT_SERVICES* bs, char* option
             store->extension_win10_1607.MajorRelease = NTDDI_WIN10_RS1;
 
             store->extension_win10_1607.LoaderPerformanceData = &store->loader_performance_data;
-            store->extension_win10_1607.ProcessorCounterFrequency = get_cpu_frequency(bs);
+            store->extension_win10_1607.ProcessorCounterFrequency = cpu_frequency;
         } else {
             extblock1a = &store->extension_win10.Block1a;
             extblock1b = &store->extension_win10.Block1b;
@@ -541,13 +548,11 @@ static loader_store* initialize_loader_block(EFI_BOOT_SERVICES* bs, char* option
             extblock3 = &store->extension_win10.Block3;
             extblock4 = &store->extension_win10.Block4;
             extblock5a = &store->extension_win10.Block5a;
+            extblock6 = &store->extension_win10.Block6;
 
-            if (build < WIN10_BUILD_1511) {
-                store->extension_win10.Size = offsetof(LOADER_PARAMETER_EXTENSION_WIN10, SystemHiveRecoveryInfo);
-#ifdef __x86_64__
-                store->extension_win10.Size += sizeof(uint32_t);
-#endif
-            } else
+            if (build < WIN10_BUILD_1511)
+                store->extension_win10.Size = offsetof(LOADER_PARAMETER_EXTENSION_WIN10, SystemHiveRecoveryInfo) + sizeof(uint32_t);
+            else
                 store->extension_win10.Size = sizeof(LOADER_PARAMETER_EXTENSION_WIN10);
 
             store->extension_win10.Profile.Status = 2;
@@ -555,7 +560,12 @@ static loader_store* initialize_loader_block(EFI_BOOT_SERVICES* bs, char* option
             store->extension_win10.BootEntropyResult.maxEntropySources = 8;
 
             store->extension_win10.LoaderPerformanceData = &store->loader_performance_data;
-            store->extension_win10.ProcessorCounterFrequency = get_cpu_frequency(bs);
+            store->extension_win10.ProcessorCounterFrequency = cpu_frequency;
+        }
+
+        if (kdnet_loaded) {
+            memcpy(&store->debug_device_descriptor, &debug_device_descriptor, sizeof(debug_device_descriptor));
+            extblock6->KdDebugDevice = &store->debug_device_descriptor;
         }
     } else {
         print(L"Unsupported Windows version.\r\n");
@@ -859,7 +869,12 @@ static void fix_store_mapping(loader_store* store, void* va, LIST_ENTRY* mapping
 
         store->extension_win81.LoaderPerformanceData =
             find_virtual_address(store->extension_win81.LoaderPerformanceData, mappings);
+
+        if (store->extension_win81.KdDebugDevice)
+            store->extension_win81.KdDebugDevice = find_virtual_address(store->extension_win81.KdDebugDevice, mappings);
     } else if (version == _WIN32_WINNT_WIN10) {
+        LOADER_EXTENSION_BLOCK6* extblock6;
+
         block1a = &store->loader_block_win10.Block1a;
         block1c = &store->loader_block_win10.Block1c;
         block2 = &store->loader_block_win10.Block2;
@@ -883,18 +898,21 @@ static void fix_store_mapping(loader_store* store, void* va, LIST_ENTRY* mapping
             extblock3 = &store->extension_win10_1903.Block3;
             extblock4 = &store->extension_win10_1903.Block4;
             extblock5a = &store->extension_win10_1903.Block5a;
+            extblock6 = &store->extension_win10_1903.Block6;
         } else if (build == WIN10_BUILD_1809) {
             extblock1b = &store->extension_win10_1809.Block1b;
             extblock2b = &store->extension_win10_1809.Block2b;
             extblock3 = &store->extension_win10_1809.Block3;
             extblock4 = &store->extension_win10_1809.Block4;
             extblock5a = &store->extension_win10_1809.Block5a;
+            extblock6 = &store->extension_win10_1809.Block6;
         } else if (build >= WIN10_BUILD_1703) {
             extblock1b = &store->extension_win10_1703.Block1b;
             extblock2b = &store->extension_win10_1703.Block2b;
             extblock3 = &store->extension_win10_1703.Block3;
             extblock4 = &store->extension_win10_1703.Block4;
             extblock5a = &store->extension_win10_1703.Block5a;
+            extblock6 = &store->extension_win10_1703.Block6;
 
             store->extension_win10_1703.LoaderPerformanceData =
                 find_virtual_address(store->extension_win10_1703.LoaderPerformanceData, mappings);
@@ -904,6 +922,7 @@ static void fix_store_mapping(loader_store* store, void* va, LIST_ENTRY* mapping
             extblock3 = &store->extension_win10_1607.Block3;
             extblock4 = &store->extension_win10_1607.Block4;
             extblock5a = &store->extension_win10_1607.Block5a;
+            extblock6 = &store->extension_win10_1607.Block6;
 
             store->extension_win10_1607.LoaderPerformanceData =
                 find_virtual_address(store->extension_win10_1607.LoaderPerformanceData, mappings);
@@ -913,10 +932,14 @@ static void fix_store_mapping(loader_store* store, void* va, LIST_ENTRY* mapping
             extblock3 = &store->extension_win10.Block3;
             extblock4 = &store->extension_win10.Block4;
             extblock5a = &store->extension_win10.Block5a;
+            extblock6 = &store->extension_win10.Block6;
 
             store->extension_win10.LoaderPerformanceData =
                 find_virtual_address(store->extension_win10.LoaderPerformanceData, mappings);
         }
+
+        if (extblock6->KdDebugDevice)
+            extblock6->KdDebugDevice = find_virtual_address(extblock6->KdDebugDevice, mappings);
     } else {
         print(L"Unsupported Windows version.\r\n");
         return;
@@ -967,6 +990,16 @@ static void fix_store_mapping(loader_store* store, void* va, LIST_ENTRY* mapping
 
     if (extblock5a)
         fix_list_mapping(&extblock5a->ApiSetSchemaExtensions, mappings);
+
+    for (unsigned int i = 0; i < MAXIMUM_DEBUG_BARS; i++) {
+        if (store->debug_device_descriptor.BaseAddress[i].Valid && store->debug_device_descriptor.BaseAddress[i].Type == CmResourceTypeMemory) {
+            store->debug_device_descriptor.BaseAddress[i].TranslatedAddress =
+                find_virtual_address(store->debug_device_descriptor.BaseAddress[i].TranslatedAddress, mappings);
+        }
+    }
+
+    if (store->debug_device_descriptor.Memory.Length != 0)
+        store->debug_device_descriptor.Memory.VirtualAddress = find_virtual_address(store->debug_device_descriptor.Memory.VirtualAddress, mappings);
 }
 
 static void set_gdt_entry(gdt_entry* gdt, uint16_t selector, uint32_t base, uint32_t limit, uint8_t type,
@@ -1091,18 +1124,24 @@ static void* initialize_idt(EFI_BOOT_SERVICES* bs) {
 
     memset(idt, 0, IDT_PAGES * EFI_PAGE_SIZE);
 
+#ifdef _MSC_VER
+    __sidt(&old);
+#else
     __asm__ __volatile__ (
         "sidt %0\n\t"
         :
         : "m" (old)
     );
+#endif
 
     memcpy(idt, (void*)(uintptr_t)old.Base, old.Limit + 1);
 
-    // FIXME - add new entries
-
     return idt;
 }
+
+#ifdef _MSC_VER
+void __stdcall set_gdt2(GDTIDT* desc, uint16_t selector);
+#endif
 
 static void set_gdt(gdt_entry* gdt) {
     GDTIDT desc;
@@ -1110,6 +1149,7 @@ static void set_gdt(gdt_entry* gdt) {
     desc.Base = (uintptr_t)gdt;
     desc.Limit = (NUM_GDT * sizeof(gdt_entry)) - 1;
 
+#ifndef _MSC_VER
     // set GDT
     __asm__ __volatile__ (
         "lgdt %0\n\t"
@@ -1157,6 +1197,9 @@ static void set_gdt(gdt_entry* gdt) {
         : "ax"
     );
 #endif
+#else
+    set_gdt2(&desc, KGDT_TSS);
+#endif
 }
 
 static void set_idt(idt_entry* idt) {
@@ -1166,11 +1209,15 @@ static void set_idt(idt_entry* idt) {
     desc.Limit = (NUM_IDT * sizeof(idt_entry)) - 1;
 
     // set GDT
+#ifdef _MSC_VER
+    __lidt(&desc);
+#else
     __asm__ __volatile__ (
         "lidt %0\n\t"
         :
         : "m" (desc)
     );
+#endif
 }
 
 static KTSS* allocate_tss(EFI_BOOT_SERVICES* bs) {
@@ -1205,53 +1252,17 @@ static void* allocate_page(EFI_BOOT_SERVICES* bs) {
 }
 
 static EFI_STATUS map_apic(EFI_BOOT_SERVICES* bs, LIST_ENTRY* mappings) {
-    uintptr_t cpu_flags;
+    int cpu_info[4];
     void* apic;
 
-#ifdef _X86_
-    __asm__ __volatile__ (
-        "mov eax, 1\n\t"
-        "cpuid\n\t"
-        "mov %0, eax\n\t"
-        : "=m" (cpu_flags)
-        :
-        : "eax", "ebx", "ecx", "edx"
-    );
-#elif defined(__x86_64__)
-    __asm__ __volatile__ (
-        "mov rax, 1\n\t"
-        "cpuid\n\t"
-        "mov %0, rax\n\t"
-        : "=m" (cpu_flags)
-        :
-        : "rax", "ebx", "ecx", "edx"
-    );
-#endif
+    __cpuid(cpu_info, 1);
 
-    if (!(cpu_flags & 0x200)) {
+    if (!(cpu_info[3] & 0x200)) {
         print(L"CPU does not have an onboard APIC.\r\n");
         return EFI_SUCCESS;
     }
 
-#ifdef _X86_
-    __asm__ __volatile__ (
-        "mov ecx, 0x1b\n\t"
-        "rdmsr\n\t"
-        "mov %0, eax\n\t"
-        : "=m" (apic)
-        :
-        : "eax", "ecx", "edx"
-    );
-#elif defined(__x86_64__)
-    __asm__ __volatile__ (
-        "mov rcx, 0x1b\n\t"
-        "rdmsr\n\t"
-        "mov %0, rax\n\t"
-        : "=m" (apic)
-        :
-        : "rax", "rcx", "edx"
-    );
-#endif
+    apic = (void*)(uintptr_t)__readmsr(0x1b);
 
     apic = (void*)((uintptr_t)apic & 0xfffff000);
 
@@ -1278,7 +1289,7 @@ static EFI_STATUS open_file_case_insensitive(EFI_FILE_HANDLE dir, WCHAR** pname,
     memcpy(tmp, name, bs * sizeof(WCHAR));
     tmp[bs] = 0;
 
-    Status = dir->Open(dir, h, (WCHAR*)name, EFI_FILE_MODE_READ, 0);
+    Status = dir->Open(dir, h, tmp, EFI_FILE_MODE_READ, 0);
     if (Status != EFI_NOT_FOUND) {
         if (name[bs] == 0)
             *pname = &name[bs];
@@ -1970,7 +1981,7 @@ static EFI_STATUS load_drivers(EFI_BOOT_SERVICES* bs, EFI_REGISTRY_HIVE* hive, H
             goto end;
         }
 
-        va2 += PAGE_COUNT(boot_list_size) * EFI_PAGE_SIZE;
+        va2 = (uint8_t*)va2 + (PAGE_COUNT(boot_list_size) * EFI_PAGE_SIZE);
         *va = va2;
     }
 
@@ -2438,9 +2449,10 @@ static EFI_STATUS load_drvdb(EFI_BOOT_SERVICES* bs, EFI_FILE_HANDLE windir, void
 }
 
 EFI_STATUS load_image(image* img, WCHAR* name, EFI_PE_LOADER_PROTOCOL* pe, void* va, EFI_FILE_HANDLE dir,
-                      command_line* cmdline) {
+                      command_line* cmdline, uint16_t build) {
     EFI_STATUS Status;
     EFI_FILE_HANDLE file;
+    bool is_kdstub = false;
 
     if (!wcsicmp(name, L"kdcom.dll") && cmdline->debug_type && strcmp(cmdline->debug_type, "com")) {
         unsigned int len = strlen(cmdline->debug_type);
@@ -2493,11 +2505,17 @@ EFI_STATUS load_image(image* img, WCHAR* name, EFI_PE_LOADER_PROTOCOL* pe, void*
         Status = EFI_NOT_FOUND;
 
         if (!strcmp(cmdline->debug_type, "net")) {
-            print(L"Opening kd_02_8086.dll instead.\r\n");  // FIXME - also support 10ec (Realtek) and 14e4 (Broadcom)
-            Status = open_file(dir, &file, L"kd_02_8086.dll");
+            Status = kdnet_init(systable->BootServices, dir, &file, &debug_device_descriptor);
 
             if (Status == EFI_NOT_FOUND)
-                print(L"Could not find kd_02_8086.dll, opening original file.\r\n");
+                print(L"Could not find override, opening original file.\r\n");
+            else if (EFI_ERROR(Status)) {
+                print_error(L"kdnet_init", Status);
+                return Status;
+            } else {
+                kdnet_loaded = true;
+                is_kdstub = true;
+            }
         }
 
         if (Status == EFI_NOT_FOUND)
@@ -2551,7 +2569,7 @@ EFI_STATUS load_image(image* img, WCHAR* name, EFI_PE_LOADER_PROTOCOL* pe, void*
 
     img->va = va;
 
-    Status = pe->Load(file, va, &img->img);
+    Status = pe->Load(file, !is_kdstub ? va : NULL, &img->img);
     if (EFI_ERROR(Status)) {
         print_error(L"PE load", Status);
         file->Close(file);
@@ -2567,6 +2585,20 @@ EFI_STATUS load_image(image* img, WCHAR* name, EFI_PE_LOADER_PROTOCOL* pe, void*
     Status = file->Close(file);
     if (EFI_ERROR(Status))
         print_error(L"file close", Status);
+
+    if (is_kdstub) {
+        kdstub = img;
+
+        Status = allocate_kdnet_hw_context(img->img, &debug_device_descriptor, build);
+        if (EFI_ERROR(Status)) {
+            print_error(L"allocate_kdnet_hw_context", Status);
+            return Status;
+        }
+
+        Status = img->img->Relocate(img->img, (uintptr_t)va);
+        if (EFI_ERROR(Status))
+            print_error(L"Relocate", Status);
+    }
 
     return Status;
 }
@@ -2680,19 +2712,6 @@ static EFI_STATUS resolve_forward(char* name, uint64_t* address) {
     return EFI_NOT_FOUND;
 }
 
-#if defined(_X86_) || defined(__x86_64__)
-__inline static void outb(uint16_t port, uint8_t val) {
-    __asm__ __volatile__ (
-        "mov dx, %0\n\t"
-        "mov al, %1\n\t"
-        "out dx, al\n\t"
-        :
-        : "" (port), "" (val)
-        : "dx","al"
-    );
-}
-#endif
-
 static EFI_STATUS initialize_csm(EFI_HANDLE image_handle, EFI_BOOT_SERVICES* bs) {
     EFI_GUID guid = EFI_LEGACY_BIOS_PROTOCOL_GUID;
     EFI_HANDLE* handles = NULL;
@@ -2738,23 +2757,14 @@ end:
 
 static EFI_STATUS load_kernel(image* img, EFI_PE_LOADER_PROTOCOL* pe, void* va, EFI_FILE_HANDLE system32,
                               command_line* cmdline) {
+    EFI_STATUS Status;
 #ifdef _X86_
     bool try_pae = true;
-    unsigned int cpu_flags;
-#endif
-    EFI_STATUS Status;
+    int cpu_info[4];
 
-#ifdef _X86_
-    __asm__ __volatile__ (
-        "mov eax, 0x80000001\n\t"
-        "cpuid\n\t"
-        "mov %0, edx\n\t"
-        : "=m" (cpu_flags)
-        :
-        : "eax", "ebx", "ecx", "edx"
-    );
+    __cpuid(cpu_info, 0x80000001);
 
-    if (!(cpu_flags & 0x40)) // PAE not supported
+    if (!(cpu_info[3] & 0x40)) // PAE not supported
         try_pae = false;
 
     if (try_pae) {
@@ -2763,7 +2773,7 @@ static EFI_STATUS load_kernel(image* img, EFI_PE_LOADER_PROTOCOL* pe, void* va, 
         if (cmdline->nx == NX_ALWAYSOFF)
             nx_supported = false;
         else {
-            if (!(cpu_flags & 0x100000)) // NX not supported
+            if (!(cpu_info[3] & 0x100000)) // NX not supported
                 nx_supported = false;
         }
 
@@ -2772,7 +2782,7 @@ static EFI_STATUS load_kernel(image* img, EFI_PE_LOADER_PROTOCOL* pe, void* va, 
     }
 
     if (!try_pae) {
-        Status = load_image(img, L"ntoskrnl.exe", pe, va, system32, cmdline);
+        Status = load_image(img, L"ntoskrnl.exe", pe, va, system32, cmdline, 0);
         if (EFI_ERROR(Status)) {
             print_error(L"load_image", Status);
             return Status;
@@ -2791,11 +2801,11 @@ static EFI_STATUS load_kernel(image* img, EFI_PE_LOADER_PROTOCOL* pe, void* va, 
     if (cmdline->kernel)
         Status = EFI_NOT_FOUND;
     else
-        Status = load_image(img, L"ntkrnlpa.exe", pe, va, system32, cmdline);
+        Status = load_image(img, L"ntkrnlpa.exe", pe, va, system32, cmdline, 0);
 
     if (Status == EFI_NOT_FOUND) {
 #endif
-        Status = load_image(img, L"ntoskrnl.exe", pe, va, system32, cmdline);
+        Status = load_image(img, L"ntoskrnl.exe", pe, va, system32, cmdline, 0);
 #ifdef _X86_
     }
 #endif
@@ -3123,6 +3133,44 @@ end:
 }
 #endif
 
+static EFI_STATUS map_debug_descriptor(EFI_BOOT_SERVICES* bs, LIST_ENTRY* mappings, void** va, DEBUG_DEVICE_DESCRIPTOR* ddd) {
+    EFI_STATUS Status;
+    void* va2 = *va;
+
+    for (unsigned int i = 0; i < MAXIMUM_DEBUG_BARS; i++) {
+        if (ddd->BaseAddress[i].Valid && ddd->BaseAddress[i].Type == CmResourceTypeMemory) {
+            // FIXME - disable write-caching etc.
+            Status = add_mapping(bs, mappings, va2, ddd->BaseAddress[i].TranslatedAddress,
+                                 ddd->BaseAddress[i].Length / EFI_PAGE_SIZE, LoaderFirmwarePermanent);
+            if (EFI_ERROR(Status)) {
+                print_error(L"add_mapping", Status);
+                return Status;
+            }
+
+            va2 = (uint8_t*)va2 + ddd->BaseAddress[i].Length;
+        }
+    }
+
+//     if (ddd->Memory.Length != 0) {
+//         Status = add_mapping(bs, mappings, va2, ddd->Memory.VirtualAddress,
+//                              ddd->Memory.Length / EFI_PAGE_SIZE, LoaderFirmwarePermanent);
+//         if (EFI_ERROR(Status)) {
+//             print_error(L"add_mapping", Status);
+//             return Status;
+//         }
+//
+//         va2 = (uint8_t*)va2 + ddd->Memory.Length;
+//     }
+
+    *va = va2;
+
+    return EFI_SUCCESS;
+}
+
+#if defined(_MSC_VER) && defined(__x86_64__)
+void call_startup(void* stack, void* loader_block, void* KiSystemStartup);
+#endif
+
 static EFI_STATUS boot(EFI_HANDLE image_handle, EFI_BOOT_SERVICES* bs, EFI_FILE_HANDLE root, char* options,
                        char* path, char* arc_name, EFI_PE_LOADER_PROTOCOL* pe, EFI_REGISTRY_PROTOCOL* reg,
                        command_line* cmdline, WCHAR* fs_driver) {
@@ -3148,9 +3196,9 @@ static EFI_STATUS boot(EFI_HANDLE image_handle, EFI_BOOT_SERVICES* bs, EFI_FILE_
     uint32_t reg_size;
     LIST_ENTRY drivers;
     LIST_ENTRY core_drivers;
-    uint32_t ntver;
+    uint32_t version_ms, version_ls;
     uint16_t version;
-    uint16_t build;
+    uint16_t build, revision;
     LOADER_BLOCK1A* block1a;
     LOADER_BLOCK1B* block1b;
     void** registry_base;
@@ -3163,6 +3211,7 @@ static EFI_STATUS boot(EFI_HANDLE image_handle, EFI_BOOT_SERVICES* bs, EFI_FILE_
     unsigned int pathlen, pathwlen;
     WCHAR* pathw;
     KPCR* pcrva = NULL;
+    bool kdstub_export_loaded = false;
 
     static const WCHAR drivers_dir_path[] = L"system32\\drivers";
 
@@ -3250,14 +3299,15 @@ static EFI_STATUS boot(EFI_HANDLE image_handle, EFI_BOOT_SERVICES* bs, EFI_FILE_
         goto end;
     }
 
-    Status = _CR(images.Flink, image, list_entry)->img->GetVersion(_CR(images.Flink, image, list_entry)->img, &ntver);
+    Status = _CR(images.Flink, image, list_entry)->img->GetVersion(_CR(images.Flink, image, list_entry)->img, &version_ms, &version_ls);
     if (EFI_ERROR(Status)) {
         print_error(L"GetVersion", Status);
         goto end;
     }
 
-    version = ntver >> 16;
-    build = ntver & 0xffff;
+    version = ((version_ms >> 16) << 8) | (version_ms & 0xff);
+    build = version_ls >> 16;
+    revision = version_ls & 0xffff;
 
     // Some checked builds have the wrong version number
     if (build == 9200)
@@ -3271,9 +3321,11 @@ static EFI_STATUS boot(EFI_HANDLE image_handle, EFI_BOOT_SERVICES* bs, EFI_FILE_
     print_dec(version >> 8);
     print(L".");
     print_dec(version & 0xff);
-    print(L" (build ");
+    print(L".");
     print_dec(build);
-    print(L").\r\n");
+    print(L".");
+    print_dec(revision);
+    print(L".\r\n");
 
     Status = load_registry(bs, system32, reg, &registry, &reg_size, &images, &drivers, &mappings, &va, version, build,
                            windir, &core_drivers, fs_driver);
@@ -3349,7 +3401,7 @@ static EFI_STATUS boot(EFI_HANDLE image_handle, EFI_BOOT_SERVICES* bs, EFI_FILE_
             }
 
             if (is_driver_dir)
-                Status = load_image(img, img->name, pe, va, drivers_dir, cmdline);
+                Status = load_image(img, img->name, pe, va, drivers_dir, cmdline, build);
             else {
                 EFI_FILE_HANDLE dir;
 
@@ -3362,12 +3414,12 @@ static EFI_STATUS boot(EFI_HANDLE image_handle, EFI_BOOT_SERVICES* bs, EFI_FILE_
                     goto end;
                 }
 
-                Status = load_image(img, img->name, pe, va, dir, cmdline);
+                Status = load_image(img, img->name, pe, va, dir, cmdline, build);
 
                 dir->Close(dir);
 
                 if (Status == EFI_NOT_FOUND)
-                    Status = load_image(img, img->name, pe, va, drivers_dir, cmdline);
+                    Status = load_image(img, img->name, pe, va, drivers_dir, cmdline, build);
             }
 
             if (EFI_ERROR(Status)) {
@@ -3569,9 +3621,17 @@ static EFI_STATUS boot(EFI_HANDLE image_handle, EFI_BOOT_SERVICES* bs, EFI_FILE_
             print_error(L"img->GetEntryPoint", Status);
     }
 
+    if (kdstub) {
+        Status = find_kd_export(kdstub->img, build);
+        if (EFI_ERROR(Status))
+            print_error(L"find_kd_export", Status);
+        else
+            kdstub_export_loaded = true;
+    }
+
     store = initialize_loader_block(bs, options, path, arc_name, &store_pages, &va, &mappings, &drivers, image_handle, version, build,
-                                    &block1a, &block1b, &registry_base, &registry_length, &block2, &extblock1a, &extblock1b, &extblock3,
-                                    &loader_pages_spanned, &core_drivers);
+                                    revision, &block1a, &block1b, &registry_base, &registry_length, &block2, &extblock1a, &extblock1b,
+                                    &extblock3, &loader_pages_spanned, &core_drivers);
     if (!store) {
         print(L"out of memory\r\n");
         Status = EFI_OUT_OF_RESOURCES;
@@ -3886,6 +3946,12 @@ static EFI_STATUS boot(EFI_HANDLE image_handle, EFI_BOOT_SERVICES* bs, EFI_FILE_
         store->loader_block_win10.FirmwareInformation.EfiInformation.EfiMemoryMapDescriptorSize = map_desc_size;
     }
 
+    Status = map_debug_descriptor(bs, &mappings, &va, &store->debug_device_descriptor);
+    if (EFI_ERROR(Status)) {
+        print_error(L"map_debug_descriptor", Status);
+        return Status;
+    }
+
 #ifdef __x86_64__
     {
         EFI_PHYSICAL_ADDRESS addr;
@@ -3914,6 +3980,18 @@ static EFI_STATUS boot(EFI_HANDLE image_handle, EFI_BOOT_SERVICES* bs, EFI_FILE_
 #endif
 
     root->Close(root);
+
+    if (kdstub_export_loaded && kdnet_scratch) {
+        Status = add_mapping(bs, &mappings, va, kdnet_scratch,
+                             PAGE_COUNT(store->debug_device_descriptor.TransportData.HwContextSize), LoaderFirmwarePermanent);
+        if (EFI_ERROR(Status)) {
+            print_error(L"add_mapping", Status);
+            goto end;
+        }
+
+        kdnet_scratch = va;
+        va = (uint8_t*)va + (PAGE_COUNT(store->debug_device_descriptor.TransportData.HwContextSize) * EFI_PAGE_SIZE);
+    }
 
 #if 0
     if (version >= _WIN32_WINNT_WIN8) {
@@ -3952,24 +4030,20 @@ static EFI_STATUS boot(EFI_HANDLE image_handle, EFI_BOOT_SERVICES* bs, EFI_FILE_
 #if defined(_X86_) || defined(__x86_64__)
     /* Re-enable IDE interrupts - the IDE driver on OVMF disables them when not expecting anything,
      * which confuses Vista. */
-    outb(0x3f6, 0);
-    outb(0x376, 0);
+    __outbyte(0x3f6, 0);
+    __outbyte(0x376, 0);
 #endif
 
 //     halt();
 
+    if (kdstub_export_loaded)
+        kdstub_init(&store->debug_device_descriptor, build);
+
 #ifdef __x86_64__
     // set syscall flag in EFER MSR
-    __asm__ __volatile__ (
-        "mov ecx, 0xc0000080\n\t"
-        "rdmsr\n\t"
-        "or eax, 1\n\t"
-        "wrmsr\n\t"
-        :
-        :
-        : "ecx", "rax", "rdx"
-    );
+    __writemsr(0xc0000080, __readmsr(0xc0000080) | 1);
 
+#ifndef _MSC_VER
     __asm__ __volatile__ (
         "mov rsp, %0\n\t"
         "lea rcx, %1\n\t"
@@ -3978,6 +4052,10 @@ static EFI_STATUS boot(EFI_HANDLE image_handle, EFI_BOOT_SERVICES* bs, EFI_FILE_
         : "m" (tss->Rsp0), "m" (store->loader_block), "m" (KiSystemStartup)
         : "rcx"
     );
+#else
+    call_startup(tss->Rsp0, &store->loader_block, KiSystemStartup);
+#endif
+
 #else
     KiSystemStartup(&store->loader_block);
 #endif
@@ -4081,25 +4159,8 @@ static EFI_STATUS load_pe_proto(EFI_BOOT_SERVICES* bs, EFI_HANDLE ImageHandle, E
     return EFI_NOT_FOUND;
 }
 
-static EFI_STATUS change_stack(EFI_BOOT_SERVICES* bs, EFI_HANDLE image_handle, change_stack_cb cb) {
-    EFI_STATUS Status;
-    EFI_PHYSICAL_ADDRESS addr;
-    void* stack_end;
-
-    Status = bs->AllocatePages(AllocateAnyPages, EfiLoaderData, STACK_SIZE, &addr);
-    if (EFI_ERROR(Status)) {
-        print_error(L"AllocatePages", Status);
-        return Status;
-    }
-
-    stack = (void*)(uintptr_t)addr;
-    stack_end = (uint8_t*)stack + (STACK_SIZE * EFI_PAGE_SIZE);
-
-#ifdef __x86_64__
-    // GCC's function prologue on amd64 uses [rbp+0x10] and [rbp+0x18]
-    stack_end = (uint8_t*)stack_end - EFI_PAGE_SIZE;
-#endif
-
+#ifndef _MSC_VER
+static void change_stack2(EFI_BOOT_SERVICES* bs, EFI_HANDLE image_handle, void* stack_end, change_stack_cb cb) {
 #ifdef _X86_
     __asm__ __volatile__ (
         "mov eax, %0\n\t"
@@ -4121,6 +4182,8 @@ static EFI_STATUS change_stack(EFI_BOOT_SERVICES* bs, EFI_HANDLE image_handle, c
         : "eax", "ebx", "ecx", "edx"
     );
 #elif defined(__x86_64__)
+    // FIXME - probably should restore original rbx
+
     __asm__ __volatile__ (
         "mov rcx, %0\n\t"
         "mov rdx, %1\n\t"
@@ -4141,6 +4204,31 @@ static EFI_STATUS change_stack(EFI_BOOT_SERVICES* bs, EFI_HANDLE image_handle, c
         : "rax", "rcx", "rdx", "rbx"
     );
 #endif
+}
+#else // in ASM file
+void __stdcall change_stack2(EFI_BOOT_SERVICES* bs, EFI_HANDLE image_handle, void* stack_end, change_stack_cb cb);
+#endif
+
+static EFI_STATUS change_stack(EFI_BOOT_SERVICES* bs, EFI_HANDLE image_handle, change_stack_cb cb) {
+    EFI_STATUS Status;
+    EFI_PHYSICAL_ADDRESS addr;
+    void* stack_end;
+
+    Status = bs->AllocatePages(AllocateAnyPages, EfiLoaderData, STACK_SIZE, &addr);
+    if (EFI_ERROR(Status)) {
+        print_error(L"AllocatePages", Status);
+        return Status;
+    }
+
+    stack = (void*)(uintptr_t)addr;
+    stack_end = (uint8_t*)stack + (STACK_SIZE * EFI_PAGE_SIZE);
+
+#ifdef __x86_64__
+    // GCC's function prologue on amd64 uses [rbp+0x10] and [rbp+0x18]
+    stack_end = (uint8_t*)stack_end - EFI_PAGE_SIZE;
+#endif
+
+    change_stack2(bs, image_handle, stack_end, cb);
 
     // only returns if unsuccessful
 

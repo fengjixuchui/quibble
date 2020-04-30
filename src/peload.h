@@ -17,8 +17,12 @@
 
 #pragma once
 
-#include <efi.h>
-#include <efilib.h>
+#include <efibind.h>
+#include <efidef.h>
+#include <efidevp.h>
+#include <efiprot.h>
+#include <eficon.h>
+#include <efiapi.h>
 
 #define PE_LOADER_PROTOCOL { 0xBA5A36D4, 0xC83C, 0x4D81, {0xB1, 0x6E, 0xBF, 0x39, 0xF7, 0x40, 0xEA, 0x79 } }
 
@@ -96,7 +100,8 @@ typedef EFI_STATUS (EFIAPI* EFI_PE_IMAGE_MOVE_ADDRESS) (
 
 typedef EFI_STATUS (EFIAPI* EFI_PE_IMAGE_GET_VERSION) (
     IN EFI_PE_IMAGE* This,
-    OUT UINT32* Version
+    OUT UINT32* VersionMS,
+    OUT UINT32* VersionLS
 );
 
 typedef EFI_STATUS (EFIAPI* EFI_PE_IMAGE_FIND_EXPORT) (
@@ -114,7 +119,14 @@ typedef EFI_STATUS (EFIAPI* EFI_PE_IMAGE_SET_NO_RELOC) (
     IN EFI_PE_IMAGE* This
 );
 
-typedef struct __attribute__((packed)) {
+typedef EFI_STATUS (EFIAPI* EFI_PE_IMAGE_RELOCATE) (
+    IN EFI_PE_IMAGE* This,
+    IN EFI_VIRTUAL_ADDRESS Address
+);
+
+#pragma pack(push,1)
+
+typedef struct {
     char Name[8];
     uint32_t VirtualSize;
     uint32_t VirtualAddress;
@@ -126,6 +138,8 @@ typedef struct __attribute__((packed)) {
     uint16_t NumberOfLinenumbers;
     uint32_t Characteristics;
 } IMAGE_SECTION_HEADER;
+
+#pragma pack(pop)
 
 #define IMAGE_SCN_MEM_DISCARDABLE   0x02000000
 #define IMAGE_SCN_MEM_NOT_CACHED    0x04000000
@@ -156,4 +170,5 @@ typedef struct _EFI_PE_IMAGE {
     EFI_PE_IMAGE_FIND_EXPORT FindExport;
     EFI_PE_IMAGE_GET_CHARACTERISTICS GetCharacteristics;
     EFI_PE_IMAGE_GET_SECTIONS GetSections;
+    EFI_PE_IMAGE_RELOCATE Relocate;
 } EFI_PE_IMAGE;

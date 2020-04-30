@@ -19,6 +19,14 @@
 
 #include <stdint.h>
 
+#define CR0_MP      0x00000002
+#define CR0_WP      0x00010000
+#define CR0_AM      0x00040000
+#define CR0_PG      0x80000000
+
+#define CR4_PAE     0x00000020
+#define CR4_PGE     0x00000080
+
 typedef struct {
     uint32_t Valid:1;
     uint32_t Write:1;
@@ -112,8 +120,10 @@ typedef struct {
     uint8_t IoMap[IOPM_FULL_SIZE];
 } KIIO_ACCESS_MAP;
 
+#pragma pack(push,1)
+
 #ifdef __x86_64__
-typedef struct __attribute__((packed)) {
+typedef struct {
     uint32_t Reserved0;
     uint64_t Rsp0;
     uint64_t Rsp1;
@@ -164,18 +174,18 @@ typedef struct {
 #endif
 
 #ifdef __x86_64__
-typedef struct __attribute__((packed)) {
+typedef struct {
     uint16_t Limit;
     uint64_t Base;
 } GDTIDT;
 #else
-typedef struct __attribute__((packed)) {
+typedef struct {
     uint16_t Limit;
     uint32_t Base;
 } GDTIDT;
 #endif
 
-typedef struct __attribute__((packed)) {
+typedef struct {
     char signature[8];
     uint8_t checksum;
     char oem_id [6];
@@ -187,7 +197,9 @@ typedef struct __attribute__((packed)) {
     char reserved[3];
 } RSDP_DESCRIPTOR;
 
-typedef struct __attribute__((packed)) {
+typedef struct {
     uint16_t address;
     uint16_t segment;
 } ivt_entry;
+
+#pragma pack(pop)

@@ -16,12 +16,37 @@
  * along with Quibble.  If not, see <http://www.gnu.org/licenses/>. */
 
 #include <stddef.h>
-#include <efi.h>
-#include <efilib.h>
+#include <string.h>
+#include <efibind.h>
+#include <efidef.h>
+#include <efidevp.h>
+#include <efiprot.h>
+#include <eficon.h>
+#include <efiapi.h>
 #include <efigpt.h>
+#include <efilink.h>
+#include <efipciio.h>
+#include <pci22.h>
 #include "x86.h"
 #include "misc.h"
 #include "quibble.h"
+
+#pragma pack(push,1)
+
+typedef struct {
+    uint8_t space_descriptor;
+    uint16_t length;
+    uint8_t resource_type;
+    uint8_t general_flags;
+    uint8_t type_specific_flags;
+    uint64_t granularity;
+    uint64_t address_minimum;
+    uint64_t address_maximum;
+    uint64_t translation_offset;
+    uint64_t address_length;
+} pci_bar_info;
+
+#pragma pack(pop)
 
 LIST_ENTRY block_devices;
 
@@ -848,4 +873,180 @@ EFI_STATUS look_for_block_devices(EFI_BOOT_SERVICES* bs) {
     }
 
     return EFI_SUCCESS;
+}
+
+static inline WCHAR hex_digit(uint8_t v) {
+    if (v >= 0xa)
+        return v + 'a' - 0xa;
+    else
+        return v + '0';
+}
+
+EFI_STATUS kdnet_init(EFI_BOOT_SERVICES* bs, EFI_FILE_HANDLE dir, EFI_FILE_HANDLE* file, DEBUG_DEVICE_DESCRIPTOR* ddd) {
+    EFI_STATUS Status;
+    EFI_GUID guid = EFI_PCI_IO_PROTOCOL_GUID;
+    EFI_HANDLE* handles = NULL;
+    UINTN count;
+
+    static const WCHAR dll_prefix[] = L"kd_02_";
+    static const WCHAR dll_suffix[] = L".dll";
+
+    WCHAR dll[(sizeof(dll_prefix) / sizeof(WCHAR)) - 1 + (sizeof(dll_suffix) / sizeof(WCHAR)) - 1 + 4 + 1];
+
+    memcpy(dll, dll_prefix, sizeof(dll_prefix) - sizeof(WCHAR));
+    memcpy(dll + (sizeof(dll_prefix) / sizeof(WCHAR)) - 1 + 4, dll_suffix, sizeof(dll_suffix));
+
+    Status = bs->LocateHandleBuffer(ByProtocol, &guid, NULL, &count, &handles);
+
+    if (EFI_ERROR(Status)) {
+        print_error(L"LocateHandleBuffer", Status);
+        return Status;
+    }
+
+    for (unsigned int i = 0; i < count; i++) {
+        EFI_PCI_IO_PROTOCOL* io;
+        PCI_TYPE00 pci;
+        WCHAR* ptr;
+        EFI_GUID guid2 = EFI_DEVICE_PATH_PROTOCOL_GUID;
+        EFI_DEVICE_PATH_PROTOCOL* device_path;
+        ACPI_HID_DEVICE_PATH* acpi_dp;
+        PCI_DEVICE_PATH* pci_dp;
+
+        Status = bs->OpenProtocol(handles[i], &guid, (void**)&io, image_handle, NULL,
+                                  EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL);
+        if (EFI_ERROR(Status))
+            continue;
+
+        Status = io->Pci.Read(io, EfiPciIoWidthUint32, 0, sizeof(pci) / sizeof(UINT32), &pci);
+
+        if (EFI_ERROR(Status)) {
+            print_error(L"Pci.Read", Status);
+            bs->CloseProtocol(handles[i], &guid, image_handle, NULL);
+            continue;
+        }
+
+        if (pci.Hdr.ClassCode[2] != PCI_CLASS_NETWORK) {
+            bs->CloseProtocol(handles[i], &guid, image_handle, NULL);
+            continue;
+        }
+
+        print(L"Found Ethernet card ");
+        print_hex(pci.Hdr.VendorId);
+        print(L":");
+        print_hex(pci.Hdr.DeviceId);
+        print(L".\r\n");
+
+        Status = bs->HandleProtocol(handles[i], &guid2, (void**)&device_path);
+        if (EFI_ERROR(Status)) {
+            print_error(L"HandleProtocol", Status);
+            bs->CloseProtocol(handles[i], &guid, image_handle, NULL);
+            continue;
+        }
+
+        acpi_dp = (ACPI_HID_DEVICE_PATH*)device_path;
+
+        if (acpi_dp->Header.Type != ACPI_DEVICE_PATH || acpi_dp->Header.SubType != ACPI_DP || (acpi_dp->HID & PNP_EISA_ID_MASK) != PNP_EISA_ID_CONST) {
+            print(L"Top of device path was not PciRoot().\r\n");
+            bs->CloseProtocol(handles[i], &guid, image_handle, NULL);
+            bs->CloseProtocol(handles[i], &guid2, image_handle, NULL);
+            continue;
+        }
+
+        pci_dp = (PCI_DEVICE_PATH*)((uint8_t*)device_path + *(uint16_t*)acpi_dp->Header.Length);
+
+        if (pci_dp->Header.Type != HARDWARE_DEVICE_PATH || pci_dp->Header.SubType != HW_PCI_DP) {
+            print(L"Device path does not refer to PCI device.\r\n");
+            bs->CloseProtocol(handles[i], &guid, image_handle, NULL);
+            bs->CloseProtocol(handles[i], &guid2, image_handle, NULL);
+            continue;
+        }
+
+        ptr = &dll[(sizeof(dll_prefix) / sizeof(WCHAR)) - 1];
+
+        *ptr = hex_digit(pci.Hdr.VendorId >> 12); ptr++;
+        *ptr = hex_digit((pci.Hdr.VendorId >> 8) & 0xf); ptr++;
+        *ptr = hex_digit((pci.Hdr.VendorId >> 4) & 0xf); ptr++;
+        *ptr = hex_digit(pci.Hdr.VendorId & 0xf); ptr++;
+
+        print(L"Opening ");
+        print(dll);
+        print(L" instead of kdstub.dll.\r\n");
+
+        Status = open_file(dir, file, dll);
+
+        if (EFI_ERROR(Status)) {
+            if (Status != EFI_NOT_FOUND) {
+                print_error(L"open_file", Status);
+                bs->CloseProtocol(handles[i], &guid2, image_handle, NULL);
+                bs->CloseProtocol(handles[i], &guid, image_handle, NULL);
+                goto end;
+            }
+
+            print(L"Not found, continuing.\r\n");
+
+            bs->CloseProtocol(handles[i], &guid2, image_handle, NULL);
+            bs->CloseProtocol(handles[i], &guid, image_handle, NULL);
+            continue;
+        }
+
+        // setup debug descriptor
+
+        memset(ddd, 0, sizeof(DEBUG_DEVICE_DESCRIPTOR));
+
+        ddd->Bus = acpi_dp->UID;
+        ddd->Slot = pci_dp->Device;
+        ddd->Segment = pci_dp->Function;
+        ddd->VendorID = pci.Hdr.VendorId;
+        ddd->DeviceID = pci.Hdr.DeviceId;
+        ddd->BaseClass = pci.Hdr.ClassCode[2];
+        ddd->SubClass = pci.Hdr.ClassCode[1];
+        ddd->ProgIf = pci.Hdr.ClassCode[0];
+        ddd->Flags = DBG_DEVICE_FLAG_BARS_MAPPED;
+        ddd->Initialized = 0;
+        ddd->Configured = 1;
+        // FIXME - Memory
+        ddd->PortType = 0x8003; // Ethernet
+        ddd->PortSubtype = 0xffff;
+        ddd->NameSpace = KdNameSpacePCI;
+        // FIXME - TransportType, TransportData
+
+        for (unsigned int i = 0; i < MAXIMUM_DEBUG_BARS; i++) {
+            void* res;
+
+            if (!EFI_ERROR(io->GetBarAttributes(io, i, NULL, &res))) {
+                pci_bar_info* info = (pci_bar_info*)res;
+
+                if (info->space_descriptor != 0x8a)
+                    print(L"First byte of pci_bar_info was not 8a.\r\n");
+                else if (info->resource_type != 0 && info->resource_type != 1) {
+                    print(L"Unsupported resource type ");
+                    print_hex(info->resource_type);
+                    print(L".\r\n");
+                } else {
+                    if (info->resource_type == 0)
+                        ddd->BaseAddress[i].Type = CmResourceTypeMemory;
+                    else
+                        ddd->BaseAddress[i].Type = CmResourceTypePort;
+
+                    ddd->BaseAddress[i].Valid = 1;
+                    ddd->BaseAddress[i].TranslatedAddress = (uint8_t*)(uintptr_t)info->address_minimum;
+                    ddd->BaseAddress[i].Length = info->address_length;
+                }
+
+                bs->FreePool(res);
+            }
+        }
+
+        bs->CloseProtocol(handles[i], &guid2, image_handle, NULL);
+        bs->CloseProtocol(handles[i], &guid, image_handle, NULL);
+
+        goto end;
+    }
+
+    Status = EFI_NOT_FOUND;
+
+end:
+    bs->FreePool(handles);
+
+    return Status;
 }

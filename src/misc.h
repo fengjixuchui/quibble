@@ -17,31 +17,28 @@
 
 #pragma once
 
-#include <efi.h>
-#include <efilib.h>
+#include <efibind.h>
+#include <efidef.h>
+#include <efidevp.h>
+#include <efiprot.h>
+#include <eficon.h>
+#include <efiapi.h>
+#include <efierr.h>
 #include <stddef.h>
 
 extern EFI_SYSTEM_TABLE* systable;
 
 #define print(s) systable->ConOut->OutputString(systable->ConOut, (s))
 
-void wcsncpy(WCHAR* dest, const WCHAR* src, size_t n);
-void wcsncat(WCHAR* dest, const WCHAR* src, size_t n);
-size_t wcslen(const WCHAR* s);
-int wcsicmp(const WCHAR* s1, const WCHAR* s2);
-void memcpy(void* dest, const void* src, size_t n);
-void* memset(void* s, int c, size_t n);
-int memcmp(const void* s1, const void* s2, size_t n);
-size_t strlen(const char* s);
-int stricmp(const char* s1, const char* s2);
-int strnicmp(const char* s1, const char* s2, int n);
-int strcmp(const char* s1, const char* s2);
-void strcpy(char* dest, const char* src);
-WCHAR* error_string(EFI_STATUS Status);
 void print_error(const WCHAR* func, EFI_STATUS Status);
 void print_hex(uint64_t v);
 void print_dec(uint32_t v);
 void print_string(const char* s);
 void itow(int v, WCHAR* w);
+#ifdef _MSC_VER
+int wcsicmp(const WCHAR* s1, const WCHAR* s2);
+int stricmp(const char* s1, const char* s2);
+int strnicmp(const char* s1, const char* s2, int n);
+#endif
 EFI_STATUS utf8_to_utf16(WCHAR* dest, unsigned int dest_max, unsigned int* dest_len, const char* src, unsigned int src_len);
 EFI_STATUS utf16_to_utf8(char* dest, unsigned int dest_max, unsigned int* dest_len, const WCHAR* src, unsigned int src_len);

@@ -17,16 +17,29 @@
 
 #pragma once
 
-#include <efi.h>
-#include <efilib.h>
+#include <efibind.h>
+#include <efidef.h>
+#include <efidevp.h>
+#include <efiprot.h>
+#include <eficon.h>
+#include <efiapi.h>
+#include <efilink.h>
+#include <efipart.h>
 #include <stdbool.h>
 #include "win.h"
 
 // FIXME - only in debug mode
+#ifndef _MSC_VER
 #define halt() { \
     unsigned int __volatile wait = 1; \
     while (wait) { __asm __volatile("pause"); } \
 }
+#else
+#define halt() { \
+    volatile unsigned int wait = 1; \
+    while (wait) { } \
+}
+#endif
 
 #define UNUSED(x) (void)(x)
 
@@ -80,11 +93,12 @@ typedef struct _command_line command_line;
 // boot.c
 extern void* stack;
 extern EFI_HANDLE image_handle;
+extern uint64_t cpu_frequency;
 EFI_STATUS add_image(EFI_BOOT_SERVICES* bs, LIST_ENTRY* images, const WCHAR* name, TYPE_OF_MEMORY memory_type,
                      const WCHAR* dir, bool dll, BOOT_DRIVER_LIST_ENTRY* bdle, unsigned int order,
                      bool no_reloc);
 EFI_STATUS load_image(image* img, WCHAR* name, EFI_PE_LOADER_PROTOCOL* pe, void* va, EFI_FILE_HANDLE dir,
-                      command_line* cmdline);
+                      command_line* cmdline, uint16_t build);
 EFI_STATUS open_file(EFI_FILE_HANDLE dir, EFI_FILE_HANDLE* h, const WCHAR* name);
 EFI_STATUS read_file(EFI_BOOT_SERVICES* bs, EFI_FILE_HANDLE dir, const WCHAR* name, void** data, size_t* size);
 EFI_STATUS open_parent_dir(EFI_FILE_IO_INTERFACE* fs, FILEPATH_DEVICE_PATH* dp, EFI_FILE_HANDLE* dir);
@@ -112,6 +126,7 @@ EFI_STATUS find_hardware(EFI_BOOT_SERVICES* bs, LOADER_BLOCK1C* block1, void** v
 EFI_STATUS find_disks(EFI_BOOT_SERVICES* bs, LIST_ENTRY* disk_sig_list, void** va, LIST_ENTRY* mappings,
                       CONFIGURATION_COMPONENT_DATA* system_key, bool new_disk_format);
 EFI_STATUS look_for_block_devices(EFI_BOOT_SERVICES* bs);
+EFI_STATUS kdnet_init(EFI_BOOT_SERVICES* bs, EFI_FILE_HANDLE dir, EFI_FILE_HANDLE* file, DEBUG_DEVICE_DESCRIPTOR* ddd);
 
 // apiset.c
 extern void* apisetva;
@@ -122,6 +137,12 @@ bool search_api_set(WCHAR* dll, WCHAR* newname, uint16_t version);
 
 // menu.c
 EFI_STATUS show_menu(EFI_SYSTEM_TABLE* systable, boot_option** opt);
+
+// debug.c
+extern void* kdnet_scratch;
+EFI_STATUS find_kd_export(EFI_PE_IMAGE* kdstub, uint16_t build);
+EFI_STATUS kdstub_init(DEBUG_DEVICE_DESCRIPTOR* ddd, uint16_t build);
+EFI_STATUS allocate_kdnet_hw_context(EFI_PE_IMAGE* kdstub, DEBUG_DEVICE_DESCRIPTOR* ddd, uint16_t build);
 
 // CSM (not in gnu-efi)
 
