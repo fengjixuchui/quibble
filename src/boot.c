@@ -27,6 +27,9 @@
 #include "x86.h"
 #include "tinymt32.h"
 #include "quibbleproto.h"
+#include "font8x8_basic.h"
+
+// #define DEBUG_EARLY_FAULTS
 
 typedef struct {
     LIST_ENTRY list_entry;
@@ -61,6 +64,7 @@ typedef struct {
         LOADER_PARAMETER_EXTENSION_WIN10_1703 extension_win10_1703;
         LOADER_PARAMETER_EXTENSION_WIN10_1809 extension_win10_1809;
         LOADER_PARAMETER_EXTENSION_WIN10_1903 extension_win10_1903;
+        LOADER_PARAMETER_EXTENSION_WIN10_2004 extension_win10_2004;
     };
 
     char strings[1024];
@@ -68,9 +72,14 @@ typedef struct {
     ARC_DISK_INFORMATION arc_disk_information;
     LOADER_PERFORMANCE_DATA loader_performance_data;
     DEBUG_DEVICE_DESCRIPTOR debug_device_descriptor;
-#if 0
-    BOOT_GRAPHICS_CONTEXT bgc;
-#endif
+
+    union {
+        uint8_t bgc;
+        BOOT_GRAPHICS_CONTEXT_V1 bgc_v1;
+        BOOT_GRAPHICS_CONTEXT_V2 bgc_v2;
+        BOOT_GRAPHICS_CONTEXT_V3 bgc_v3;
+        BOOT_GRAPHICS_CONTEXT_V4 bgc_v4;
+    };
 } loader_store;
 
 typedef struct _command_line {
@@ -84,6 +93,11 @@ typedef struct _command_line {
 #endif
 } command_line;
 
+typedef struct {
+    unsigned int x;
+    unsigned int y;
+} text_pos;
+
 EFI_SYSTEM_TABLE* systable;
 NLS_DATA_BLOCK nls;
 size_t acp_size, oemcp_size, lang_size;
@@ -96,6 +110,12 @@ bool kdnet_loaded = false;
 static DEBUG_DEVICE_DESCRIPTOR debug_device_descriptor;
 image* kdstub = NULL;
 uint64_t cpu_frequency;
+void* apic = NULL;
+void* system_font = NULL;
+size_t system_font_size = 0;
+void* console_font = NULL;
+size_t console_font_size = 0;
+loader_store* store2;
 
 typedef void (EFIAPI* change_stack_cb) (
     EFI_BOOT_SERVICES* bs,
@@ -218,6 +238,7 @@ static loader_store* initialize_loader_block(EFI_BOOT_SERVICES* bs, char* option
     LOADER_BLOCK2* block2;
     LOADER_EXTENSION_BLOCK1A* extblock1a;
     LOADER_EXTENSION_BLOCK1B* extblock1b;
+    LOADER_EXTENSION_BLOCK1C* extblock1c;
     LOADER_EXTENSION_BLOCK2B* extblock2b;
     LOADER_EXTENSION_BLOCK3* extblock3;
     LOADER_EXTENSION_BLOCK4* extblock4;
@@ -250,6 +271,7 @@ static loader_store* initialize_loader_block(EFI_BOOT_SERVICES* bs, char* option
         extblock1a = &store->extension_ws03.Block1a;
         loader_pages_spanned = &store->extension_ws03.LoaderPagesSpanned;
         extblock1b = &store->extension_ws03.Block1b;
+        extblock1c = &store->extension_ws03.Block1c;
         extblock2b = NULL;
         extblock3 = NULL;
         extblock4 = NULL;
@@ -277,6 +299,7 @@ static loader_store* initialize_loader_block(EFI_BOOT_SERVICES* bs, char* option
             extblock1a = &store->extension_vista_sp2.Block1a;
             loader_pages_spanned = &store->extension_vista_sp2.LoaderPagesSpanned;
             extblock1b = &store->extension_vista_sp2.Block1b;
+            extblock1c = &store->extension_vista_sp2.Block1c;
             extblock2b = &store->extension_vista_sp2.Block2b;
 
             store->extension_vista_sp2.Size = sizeof(LOADER_PARAMETER_EXTENSION_VISTA_SP2);
@@ -289,6 +312,7 @@ static loader_store* initialize_loader_block(EFI_BOOT_SERVICES* bs, char* option
             extblock1a = &store->extension_vista.Block1a;
             loader_pages_spanned = &store->extension_vista.LoaderPagesSpanned;
             extblock1b = &store->extension_vista.Block1b;
+            extblock1c = &store->extension_vista.Block1c;
             extblock2b = &store->extension_vista.Block2b;
 
             store->extension_vista.Size = sizeof(LOADER_PARAMETER_EXTENSION_VISTA);
@@ -312,6 +336,7 @@ static loader_store* initialize_loader_block(EFI_BOOT_SERVICES* bs, char* option
         extblock1a = &store->extension_win7.Block1a;
         loader_pages_spanned = &store->extension_win7.LoaderPagesSpanned;
         extblock1b = &store->extension_win7.Block1b;
+        extblock1c = &store->extension_win7.Block1c;
         extblock2b = &store->extension_win7.Block2b;
         extblock3 = &store->extension_win7.Block3;
         extblock4 = NULL;
@@ -344,6 +369,7 @@ static loader_store* initialize_loader_block(EFI_BOOT_SERVICES* bs, char* option
         extblock1a = &store->extension_win8.Block1a;
         loader_pages_spanned = NULL;
         extblock1b = &store->extension_win8.Block1b;
+        extblock1c = &store->extension_win8.Block1c;
         extblock2b = &store->extension_win8.Block2b;
         extblock3 = &store->extension_win8.Block3;
         extblock4 = &store->extension_win8.Block4;
@@ -385,6 +411,7 @@ static loader_store* initialize_loader_block(EFI_BOOT_SERVICES* bs, char* option
         extblock1a = &store->extension_win81.Block1a;
         loader_pages_spanned = NULL;
         extblock1b = &store->extension_win81.Block1b;
+        extblock1c = &store->extension_win81.Block1c;
         extblock2b = &store->extension_win81.Block2b;
         extblock3 = &store->extension_win81.Block3;
         extblock4 = &store->extension_win81.Block4;
@@ -466,9 +493,25 @@ static loader_store* initialize_loader_block(EFI_BOOT_SERVICES* bs, char* option
         store->loader_block_win10.FirmwareInformation.EfiInformation.FirmwareVersion = systable->Hdr.Revision;
         InitializeListHead(&store->loader_block_win10.FirmwareInformation.EfiInformation.FirmwareResourceList);
 
-        if (build >= WIN10_BUILD_1903) {
+        if (build >= WIN10_BUILD_2004) {
+            extblock1a = &store->extension_win10_2004.Block1a;
+            extblock1b = &store->extension_win10_2004.Block1b;
+            extblock1c = &store->extension_win10_2004.Block1c;
+            extblock2b = &store->extension_win10_2004.Block2b;
+            extblock3 = &store->extension_win10_2004.Block3;
+            extblock4 = &store->extension_win10_2004.Block4;
+            extblock5a = &store->extension_win10_2004.Block5a;
+            extblock6 = &store->extension_win10_2004.Block6;
+            store->extension_win10_2004.Size = sizeof(LOADER_PARAMETER_EXTENSION_WIN10_2004);
+
+            store->extension_win10_2004.Profile.Status = 2;
+            store->extension_win10_2004.BootEntropyResult.maxEntropySources = 10;
+            store->extension_win10_2004.MajorRelease = NTDDI_WIN10_20H1;
+            store->extension_win10_2004.ProcessorCounterFrequency = cpu_frequency;
+        } else if (build >= WIN10_BUILD_1903) {
             extblock1a = &store->extension_win10_1903.Block1a;
             extblock1b = &store->extension_win10_1903.Block1b;
+            extblock1c = &store->extension_win10_1903.Block1c;
             extblock2b = &store->extension_win10_1903.Block2b;
             extblock3 = &store->extension_win10_1903.Block3;
             extblock4 = &store->extension_win10_1903.Block4;
@@ -485,6 +528,7 @@ static loader_store* initialize_loader_block(EFI_BOOT_SERVICES* bs, char* option
         } else if (build == WIN10_BUILD_1809) {
             extblock1a = &store->extension_win10_1809.Block1a;
             extblock1b = &store->extension_win10_1809.Block1b;
+            extblock1c = &store->extension_win10_1809.Block1c;
             extblock2b = &store->extension_win10_1809.Block2b;
             extblock3 = &store->extension_win10_1809.Block3;
             extblock4 = &store->extension_win10_1809.Block4;
@@ -499,6 +543,7 @@ static loader_store* initialize_loader_block(EFI_BOOT_SERVICES* bs, char* option
         } else if (build >= WIN10_BUILD_1703) {
             extblock1a = &store->extension_win10_1703.Block1a;
             extblock1b = &store->extension_win10_1703.Block1b;
+            extblock1c = &store->extension_win10_1703.Block1c;
             extblock2b = &store->extension_win10_1703.Block2b;
             extblock3 = &store->extension_win10_1703.Block3;
             extblock4 = &store->extension_win10_1703.Block4;
@@ -526,6 +571,7 @@ static loader_store* initialize_loader_block(EFI_BOOT_SERVICES* bs, char* option
         } else if (build >= WIN10_BUILD_1607) {
             extblock1a = &store->extension_win10_1607.Block1a;
             extblock1b = &store->extension_win10_1607.Block1b;
+            extblock1c = &store->extension_win10_1607.Block1c;
             extblock2b = &store->extension_win10_1607.Block2b;
             extblock3 = &store->extension_win10_1607.Block3;
             extblock4 = &store->extension_win10_1607.Block4;
@@ -544,6 +590,7 @@ static loader_store* initialize_loader_block(EFI_BOOT_SERVICES* bs, char* option
         } else {
             extblock1a = &store->extension_win10.Block1a;
             extblock1b = &store->extension_win10.Block1b;
+            extblock1c = &store->extension_win10.Block1c;
             extblock2b = &store->extension_win10.Block2b;
             extblock3 = &store->extension_win10.Block3;
             extblock4 = &store->extension_win10.Block4;
@@ -582,8 +629,8 @@ static loader_store* initialize_loader_block(EFI_BOOT_SERVICES* bs, char* option
 
     *va = (uint8_t*)*va + (STACK_SIZE * EFI_PAGE_SIZE);
 
-    InitializeListHead(&extblock1b->FirmwareDescriptorListHead);
-    extblock1b->AcpiTable = (void*)1; // FIXME - this is what freeldr does - it doesn't seem right...
+    InitializeListHead(&extblock1c->FirmwareDescriptorListHead);
+    extblock1c->AcpiTable = (void*)1; // FIXME - this is what freeldr does - it doesn't seem right...
 
     block2->Extension = &store->extension;
     block1c->NlsData = &store->nls;
@@ -780,7 +827,7 @@ static void fix_store_mapping(loader_store* store, void* va, LIST_ENTRY* mapping
     LOADER_BLOCK1A* block1a;
     LOADER_BLOCK1C* block1c;
     LOADER_BLOCK2* block2;
-    LOADER_EXTENSION_BLOCK1B* extblock1b;
+    LOADER_EXTENSION_BLOCK1C* extblock1c;
     LOADER_EXTENSION_BLOCK2B* extblock2b;
     LOADER_EXTENSION_BLOCK3* extblock3;
     LOADER_EXTENSION_BLOCK4* extblock4;
@@ -790,7 +837,7 @@ static void fix_store_mapping(loader_store* store, void* va, LIST_ENTRY* mapping
         block1a = &store->loader_block_ws03.Block1a;
         block1c = &store->loader_block_ws03.Block1c;
         block2 = &store->loader_block_ws03.Block2;
-        extblock1b = &store->extension_ws03.Block1b;
+        extblock1c = &store->extension_ws03.Block1c;
         extblock2b = NULL;
         extblock3 = NULL;
         extblock4 = NULL;
@@ -799,7 +846,7 @@ static void fix_store_mapping(loader_store* store, void* va, LIST_ENTRY* mapping
         block1a = &store->loader_block_vista.Block1a;
         block1c = &store->loader_block_vista.Block1c;
         block2 = &store->loader_block_vista.Block2;
-        extblock1b = &store->extension_vista.Block1b;
+        extblock1c = &store->extension_vista.Block1c;
         extblock2b = &store->extension_vista.Block2b;
         extblock3 = NULL;
         extblock4 = NULL;
@@ -814,7 +861,7 @@ static void fix_store_mapping(loader_store* store, void* va, LIST_ENTRY* mapping
         block1a = &store->loader_block_win7.Block1a;
         block1c = &store->loader_block_win7.Block1c;
         block2 = &store->loader_block_win7.Block2;
-        extblock1b = &store->extension_win7.Block1b;
+        extblock1c = &store->extension_win7.Block1c;
         extblock2b = &store->extension_win7.Block2b;
         extblock3 = &store->extension_win7.Block3;
         extblock4 = NULL;
@@ -829,7 +876,7 @@ static void fix_store_mapping(loader_store* store, void* va, LIST_ENTRY* mapping
         block1a = &store->loader_block_win8.Block1a;
         block1c = &store->loader_block_win8.Block1c;
         block2 = &store->loader_block_win8.Block2;
-        extblock1b = &store->extension_win8.Block1b;
+        extblock1c = &store->extension_win8.Block1c;
         extblock2b = &store->extension_win8.Block2b;
         extblock3 = &store->extension_win8.Block3;
         extblock4 = &store->extension_win8.Block4;
@@ -850,7 +897,7 @@ static void fix_store_mapping(loader_store* store, void* va, LIST_ENTRY* mapping
         block1a = &store->loader_block_win81.Block1a;
         block1c = &store->loader_block_win81.Block1c;
         block2 = &store->loader_block_win81.Block2;
-        extblock1b = &store->extension_win81.Block1b;
+        extblock1c = &store->extension_win81.Block1c;
         extblock2b = &store->extension_win81.Block2b;
         extblock3 = &store->extension_win81.Block3;
         extblock4 = &store->extension_win81.Block4;
@@ -892,22 +939,29 @@ static void fix_store_mapping(loader_store* store, void* va, LIST_ENTRY* mapping
 
         fix_list_mapping(&store->loader_block_win10.FirmwareInformation.EfiInformation.FirmwareResourceList, mappings);
 
-        if (build >= WIN10_BUILD_1903) {
-            extblock1b = &store->extension_win10_1903.Block1b;
+        if (build >= WIN10_BUILD_2004) {
+            extblock1c = &store->extension_win10_2004.Block1c;
+            extblock2b = &store->extension_win10_2004.Block2b;
+            extblock3 = &store->extension_win10_2004.Block3;
+            extblock4 = &store->extension_win10_2004.Block4;
+            extblock5a = &store->extension_win10_2004.Block5a;
+            extblock6 = &store->extension_win10_2004.Block6;
+        } else if (build >= WIN10_BUILD_1903) {
+            extblock1c = &store->extension_win10_1903.Block1c;
             extblock2b = &store->extension_win10_1903.Block2b;
             extblock3 = &store->extension_win10_1903.Block3;
             extblock4 = &store->extension_win10_1903.Block4;
             extblock5a = &store->extension_win10_1903.Block5a;
             extblock6 = &store->extension_win10_1903.Block6;
         } else if (build == WIN10_BUILD_1809) {
-            extblock1b = &store->extension_win10_1809.Block1b;
+            extblock1c = &store->extension_win10_1809.Block1c;
             extblock2b = &store->extension_win10_1809.Block2b;
             extblock3 = &store->extension_win10_1809.Block3;
             extblock4 = &store->extension_win10_1809.Block4;
             extblock5a = &store->extension_win10_1809.Block5a;
             extblock6 = &store->extension_win10_1809.Block6;
         } else if (build >= WIN10_BUILD_1703) {
-            extblock1b = &store->extension_win10_1703.Block1b;
+            extblock1c = &store->extension_win10_1703.Block1c;
             extblock2b = &store->extension_win10_1703.Block2b;
             extblock3 = &store->extension_win10_1703.Block3;
             extblock4 = &store->extension_win10_1703.Block4;
@@ -917,7 +971,7 @@ static void fix_store_mapping(loader_store* store, void* va, LIST_ENTRY* mapping
             store->extension_win10_1703.LoaderPerformanceData =
                 find_virtual_address(store->extension_win10_1703.LoaderPerformanceData, mappings);
         } else if (build >= WIN10_BUILD_1607) {
-            extblock1b = &store->extension_win10_1607.Block1b;
+            extblock1c = &store->extension_win10_1607.Block1c;
             extblock2b = &store->extension_win10_1607.Block2b;
             extblock3 = &store->extension_win10_1607.Block3;
             extblock4 = &store->extension_win10_1607.Block4;
@@ -927,7 +981,7 @@ static void fix_store_mapping(loader_store* store, void* va, LIST_ENTRY* mapping
             store->extension_win10_1607.LoaderPerformanceData =
                 find_virtual_address(store->extension_win10_1607.LoaderPerformanceData, mappings);
         } else {
-            extblock1b = &store->extension_win10.Block1b;
+            extblock1c = &store->extension_win10.Block1c;
             extblock2b = &store->extension_win10.Block2b;
             extblock3 = &store->extension_win10.Block3;
             extblock4 = &store->extension_win10.Block4;
@@ -973,7 +1027,7 @@ static void fix_store_mapping(loader_store* store, void* va, LIST_ENTRY* mapping
     if (block1c->LoadOptions)
         block1c->LoadOptions = find_virtual_address(block1c->LoadOptions, mappings);
 
-    fix_list_mapping(&extblock1b->FirmwareDescriptorListHead, mappings);
+    fix_list_mapping(&extblock1c->FirmwareDescriptorListHead, mappings);
 
     if (extblock2b)
         fix_list_mapping(&extblock2b->BootApplicationPersistentData, mappings);
@@ -998,7 +1052,7 @@ static void fix_store_mapping(loader_store* store, void* va, LIST_ENTRY* mapping
         }
     }
 
-    if (store->debug_device_descriptor.Memory.Length != 0)
+    if (store->debug_device_descriptor.Memory.VirtualAddress)
         store->debug_device_descriptor.Memory.VirtualAddress = find_virtual_address(store->debug_device_descriptor.Memory.VirtualAddress, mappings);
 }
 
@@ -1108,6 +1162,113 @@ static void* initialize_gdt(EFI_BOOT_SERVICES* bs, KTSS* tss, KTSS* nmitss, KTSS
     return gdt;
 }
 
+#ifdef DEBUG_EARLY_FAULTS
+static void draw_text(const char* s, text_pos* p) {
+    unsigned int len = strlen(s);
+
+    for (unsigned int i = 0; i < len; i++) {
+        char* v = font8x8_basic[(unsigned int)s[i]];
+
+        if (s[i] == '\n') {
+            p->y++;
+            p->x = 0;
+            continue;
+        }
+
+        uint32_t* base = (uint32_t*)store2->bgc.internal.framebuffer + (store2->bgc.internal.pixels_per_scan_line * p->y * 8) + (p->x * 8);
+
+        for (unsigned int y = 0; y < 8; y++) {
+            uint8_t v2 = v[y];
+            uint32_t* buf = base + (store2->bgc.internal.pixels_per_scan_line * y);
+
+            for (unsigned int x = 0; x < 8; x++) {
+                if (v2 & 1)
+                    *buf = 0xffffffff;
+                else
+                    *buf = 0;
+
+                v2 >>= 1;
+                buf++;
+            }
+        }
+
+        p->x++;
+    }
+}
+
+static void draw_text_hex(uint64_t v, text_pos* p) {
+    char s[17], *t;
+
+    if (v == 0) {
+        draw_text("0", p);
+        return;
+    }
+
+    s[16] = 0;
+    t = &s[16];
+
+    while (v != 0) {
+        t = &t[-1];
+
+        if ((v & 0xf) >= 10)
+            *t = (v & 0xf) - 10 + 'a';
+        else
+            *t = (v & 0xf) + '0';
+
+        v >>= 4;
+    }
+
+    draw_text(t, p);
+}
+
+static void page_fault(uintptr_t error_code, uintptr_t rip, uintptr_t cs, uintptr_t* stack) {
+    if (store2->bgc.internal.framebuffer) {
+        text_pos p;
+
+        p.x = p.y = 0;
+        draw_text("Page fault!\n", &p);
+
+        draw_text("cr2: ", &p);
+        draw_text_hex(__readcr2(), &p);
+        draw_text("\n", &p);
+
+        draw_text("error code: ", &p);
+        draw_text_hex(error_code, &p);
+        draw_text("\n", &p);
+
+        draw_text("rip: ", &p);
+        draw_text_hex(rip, &p);
+        draw_text("\n", &p);
+
+        draw_text("cs: ", &p);
+        draw_text_hex(cs, &p);
+        draw_text("\n", &p);
+
+        draw_text("stack:\n", &p);
+        for (unsigned int i = 0; i < 16; i++) {
+            draw_text_hex(stack[i+3], &p);
+            draw_text("\n", &p);
+        }
+    }
+
+    halt();
+}
+
+__attribute__((naked))
+static void page_fault_wrapper() {
+    __asm__ __volatile__ (
+        "pop rcx\n\t"
+        "mov rdx, [rsp]\n\t"
+        "mov r8, [rsp+8]\n\t"
+        "mov r9, rsp\n\t"
+        "call %0\n\t"
+        "iret\n\t"
+        :
+        : "a" (page_fault)
+    );
+}
+#endif
+
 static void* initialize_idt(EFI_BOOT_SERVICES* bs) {
     EFI_STATUS Status;
     idt_entry* idt;
@@ -1135,6 +1296,19 @@ static void* initialize_idt(EFI_BOOT_SERVICES* bs) {
 #endif
 
     memcpy(idt, (void*)(uintptr_t)old.Base, old.Limit + 1);
+
+#ifdef DEBUG_EARLY_FAULTS
+    uintptr_t func = (uintptr_t)(void*)page_fault_wrapper;
+
+    // page fault
+    idt[0xe].offset_1 = func & 0xffff;
+    idt[0xe].selector = KGDT_R0_CODE;
+    idt[0xe].ist = 0;
+    idt[0xe].type_attr = 0x8f;
+    idt[0xe].offset_2 = (func >> 16) & 0xffff;
+    idt[0xe].offset_3 = func >> 32;
+    idt[0xe].zero = 0;
+#endif
 
     return idt;
 }
@@ -1251,22 +1425,19 @@ static void* allocate_page(EFI_BOOT_SERVICES* bs) {
     return (void*)(uintptr_t)addr;
 }
 
-static EFI_STATUS map_apic(EFI_BOOT_SERVICES* bs, LIST_ENTRY* mappings) {
+static void find_apic() {
     int cpu_info[4];
-    void* apic;
 
     __cpuid(cpu_info, 1);
 
     if (!(cpu_info[3] & 0x200)) {
         print(L"CPU does not have an onboard APIC.\r\n");
-        return EFI_SUCCESS;
+        return;
     }
 
     apic = (void*)(uintptr_t)__readmsr(0x1b);
 
     apic = (void*)((uintptr_t)apic & 0xfffff000);
-
-    return add_mapping(bs, mappings, (void*)APIC_BASE, apic, 1, LoaderFirmwarePermanent);
 }
 
 static EFI_STATUS open_file_case_insensitive(EFI_FILE_HANDLE dir, WCHAR** pname, EFI_FILE_HANDLE* h) {
@@ -3029,23 +3200,51 @@ static void parse_options(const char* options, command_line* cmdline) {
     }
 }
 
-#if 0
 static EFI_STATUS set_graphics_mode(EFI_BOOT_SERVICES* bs, EFI_HANDLE image_handle, LIST_ENTRY* mappings, void** va,
-                                    BOOT_GRAPHICS_CONTEXT* bgc, LOADER_EXTENSION_BLOCK3* extblock3) {
+                                    uint16_t version, uint16_t build, void* bgc, LOADER_EXTENSION_BLOCK3* extblock3) {
     EFI_GUID guid = EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID;
     EFI_HANDLE* handles = NULL;
     UINTN count;
     EFI_STATUS Status;
+    unsigned int bg_version;
+    bgblock1* block1;
+    bgblock2* block2;
+
+    if (version < _WIN32_WINNT_WINBLUE) { // Win 8 (and 7?)
+        BOOT_GRAPHICS_CONTEXT_V1* bgc1 = (BOOT_GRAPHICS_CONTEXT_V1*)bgc;
+
+        bg_version = 1;
+        block1 = &bgc1->block1;
+        block2 = &bgc1->block2;
+    } else if (version == _WIN32_WINNT_WINBLUE || build < WIN10_BUILD_1703) { // 8.1, 1507, 1511, 1607
+        BOOT_GRAPHICS_CONTEXT_V2* bgc2 = (BOOT_GRAPHICS_CONTEXT_V2*)bgc;
+
+        bg_version = 2;
+        block1 = &bgc2->block1;
+        block2 = &bgc2->block2;
+    } else if (build < WIN10_BUILD_1803) { // 1703 and 1709
+        BOOT_GRAPHICS_CONTEXT_V3* bgc3 = (BOOT_GRAPHICS_CONTEXT_V3*)bgc;
+
+        bg_version = 3;
+        block1 = &bgc3->block1;
+        block2 = &bgc3->block2;
+    } else { // 1803 on
+        BOOT_GRAPHICS_CONTEXT_V4* bgc4 = (BOOT_GRAPHICS_CONTEXT_V4*)bgc;
+
+        bg_version = 4;
+        block1 = &bgc4->block1;
+        block2 = &bgc4->block2;
+    }
 
     Status = bs->LocateHandleBuffer(ByProtocol, &guid, NULL, &count, &handles);
     if (EFI_ERROR(Status))
         return Status;
 
-    print_hex(count);
-    print(L" graphics devices found.\r\n");
-
     for (unsigned int i = 0; i < count; i++) {
         EFI_GRAPHICS_OUTPUT_PROTOCOL* gop = NULL;
+        EFI_PHYSICAL_ADDRESS rp;
+        unsigned int mode = 0;
+        unsigned int pixels = 0;
 
         Status = bs->OpenProtocol(handles[i], &guid, (void**)&gop, image_handle, NULL,
                                   EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL);
@@ -3053,9 +3252,6 @@ static EFI_STATUS set_graphics_mode(EFI_BOOT_SERVICES* bs, EFI_HANDLE image_hand
             print_error(L"OpenProtocol", Status);
             continue;
         }
-
-        print_hex(count);
-        print(L" modes.\r\n");
 
         for (unsigned int j = 0; j < gop->Mode->MaxMode; j++) {
             UINTN size;
@@ -3067,19 +3263,41 @@ static EFI_STATUS set_graphics_mode(EFI_BOOT_SERVICES* bs, EFI_HANDLE image_hand
                 continue;
             }
 
+#if 0
             print(L"Mode ");
-            print_hex(j);
-            print(L": ");
+            print_dec(j);
+            print(L": PixelFormat = ");
+            print_dec(info->PixelFormat);
+            print(L", ");
             print_dec(info->HorizontalResolution);
             print(L"x");
             print_dec(info->VerticalResolution);
             print(L"\r\n");
-            // FIXME
+
+            if (info->PixelFormat == PixelBitMask) {
+                print(L"Bit mask: red = ");
+                print_hex(info->PixelInformation.RedMask);
+                print(L", green = ");
+                print_hex(info->PixelInformation.GreenMask);
+                print(L", blue = ");
+                print_hex(info->PixelInformation.BlueMask);
+                print(L"\r\n");
+            }
+#endif
+
+            // choose the best mode
+            // FIXME - allow user to override this
+
+            if (info->PixelFormat == PixelBlueGreenRedReserved8BitPerColor &&
+                info->HorizontalResolution * info->VerticalResolution > pixels) {
+                mode = j;
+                pixels = info->HorizontalResolution * info->VerticalResolution;
+            }
+
+            // FIXME - does Windows support anything other than BGR?
         }
 
-        // FIXME - choose best mode
-
-        Status = gop->SetMode(gop, 1);
+        Status = gop->SetMode(gop, mode);
         if (EFI_ERROR(Status)) {
             print_error(L"SetMode", Status);
             bs->CloseProtocol(handles[i], &guid, image_handle, NULL);
@@ -3096,27 +3314,78 @@ static EFI_STATUS set_graphics_mode(EFI_BOOT_SERVICES* bs, EFI_HANDLE image_hand
             goto end;
         }
 
-        // FIXME
-
-        bgc->Unknown2 = 0xc4000101; // ???
-        bgc->Height = 600; // FIXME
-        bgc->Width = 800; // FIXME
-        bgc->PixelsPerScanLine = 800; // FIXME
-        bgc->PixelFormat = 5; // pixel format?
-        bgc->Unknown3 = 0x20; // bits per pixel?
-        bgc->FrameBuffer = *va;
+        block1->version = bg_version;
+        block1->internal.unk1 = 1; // ?
+        block1->internal.unk2 = 1; // ?
+        block1->internal.unk3 = 0; // ?
+        block1->internal.unk4 = 0xc4; // ? (0xf4 is BIOS graphics?)
+        block1->internal.height = gop->Mode->Info->VerticalResolution;
+        block1->internal.width = gop->Mode->Info->HorizontalResolution;
+        block1->internal.pixels_per_scan_line = gop->Mode->Info->PixelsPerScanLine;
+        block1->internal.format = 5; // 4 = 24-bit colour, 5 = 32-bit colour (see BgpGetBitsPerPixel)
+#ifdef __x86_64__
+        block1->internal.bits_per_pixel = 32;
+#endif
+        block1->internal.framebuffer = *va;
 
         *va = (uint8_t*)*va + (PAGE_COUNT(gop->Mode->FrameBufferSize) * EFI_PAGE_SIZE);
 
-        extblock3->BgContext = bgc;
+        // allocate and map reserve pool (used as scratch space?)
 
-//         print(L"Device ");
-//         print_hex(i);
-//         print(L", type ");
-//         print_hex(devpath->Type);
-//         print(L", subtype ");
-//         print_hex(devpath->SubType);
-//         print(L"\r\n");
+        block2->reserve_pool_size = 0x4000;
+
+        Status = bs->AllocatePages(AllocateAnyPages, EfiLoaderData, PAGE_COUNT(block2->reserve_pool_size), &rp);
+        if (EFI_ERROR(Status)) {
+            print_error(L"AllocatePages", Status);
+            bs->CloseProtocol(handles[i], &guid, image_handle, NULL);
+            goto end;
+        }
+
+        Status = add_mapping(bs, mappings, *va, (void*)(uintptr_t)rp,
+                             PAGE_COUNT(block2->reserve_pool_size), LoaderFirmwarePermanent); // FIXME - what should the memory type be?
+        if (EFI_ERROR(Status)) {
+            print_error(L"add_mapping", Status);
+            bs->CloseProtocol(handles[i], &guid, image_handle, NULL);
+            goto end;
+        }
+
+        block2->reserve_pool = *va;
+
+        *va = (uint8_t*)*va + (PAGE_COUNT(block2->reserve_pool_size) * EFI_PAGE_SIZE);
+
+        // map fonts
+
+        if (system_font) {
+            Status = add_mapping(bs, mappings, *va, system_font, PAGE_COUNT(system_font_size),
+                                 LoaderFirmwarePermanent); // FIXME - what should the memory type be?
+            if (EFI_ERROR(Status)) {
+                print_error(L"add_mapping", Status);
+                bs->CloseProtocol(handles[i], &guid, image_handle, NULL);
+                goto end;
+            }
+
+            block1->system_font = *va;
+            block1->system_font_size = system_font_size;
+
+            *va = (uint8_t*)*va + (PAGE_COUNT(system_font_size) * EFI_PAGE_SIZE);
+        }
+
+        if (console_font) {
+            Status = add_mapping(bs, mappings, *va, console_font, PAGE_COUNT(console_font_size),
+                                 LoaderFirmwarePermanent); // FIXME - what should the memory type be?
+            if (EFI_ERROR(Status)) {
+                print_error(L"add_mapping", Status);
+                bs->CloseProtocol(handles[i], &guid, image_handle, NULL);
+                goto end;
+            }
+
+            block1->console_font = *va;
+            block1->console_font_size = console_font_size;
+
+            *va = (uint8_t*)*va + (PAGE_COUNT(console_font_size) * EFI_PAGE_SIZE);
+        }
+
+        extblock3->BgContext = bgc;
 
         bs->CloseProtocol(handles[i], &guid, image_handle, NULL);
 
@@ -3131,7 +3400,6 @@ end:
 
     return Status;
 }
-#endif
 
 static EFI_STATUS map_debug_descriptor(EFI_BOOT_SERVICES* bs, LIST_ENTRY* mappings, void** va, DEBUG_DEVICE_DESCRIPTOR* ddd) {
     EFI_STATUS Status;
@@ -3141,13 +3409,13 @@ static EFI_STATUS map_debug_descriptor(EFI_BOOT_SERVICES* bs, LIST_ENTRY* mappin
         if (ddd->BaseAddress[i].Valid && ddd->BaseAddress[i].Type == CmResourceTypeMemory) {
             // FIXME - disable write-caching etc.
             Status = add_mapping(bs, mappings, va2, ddd->BaseAddress[i].TranslatedAddress,
-                                 ddd->BaseAddress[i].Length / EFI_PAGE_SIZE, LoaderFirmwarePermanent);
+                                 PAGE_COUNT(ddd->BaseAddress[i].Length), LoaderFirmwarePermanent);
             if (EFI_ERROR(Status)) {
                 print_error(L"add_mapping", Status);
                 return Status;
             }
 
-            va2 = (uint8_t*)va2 + ddd->BaseAddress[i].Length;
+            va2 = (uint8_t*)va2 + (PAGE_COUNT(ddd->BaseAddress[i].Length) * EFI_PAGE_SIZE);
         }
     }
 
@@ -3163,6 +3431,36 @@ static EFI_STATUS map_debug_descriptor(EFI_BOOT_SERVICES* bs, LIST_ENTRY* mappin
 //     }
 
     *va = va2;
+
+    return EFI_SUCCESS;
+}
+
+static EFI_STATUS load_fonts(EFI_BOOT_SERVICES* bs, EFI_FILE_HANDLE windir) {
+    EFI_STATUS Status;
+    EFI_FILE_HANDLE fonts = NULL;
+
+    Status = open_file(windir, &fonts, L"Fonts");
+    if (EFI_ERROR(Status)) {
+        print(L"Could not open Fonts directory.\r\n");
+        print_error(L"open_file", Status);
+        return Status;
+    }
+
+    // FIXME - allow user to choose fonts?
+
+    // Windows 10 uses Segoe Light for system, Segoe Mono Boot for console
+
+    Status = read_file(bs, fonts, L"arial.ttf", &system_font, &system_font_size);
+    if (EFI_ERROR(Status)) {
+        print_error(L"read_file", Status);
+        return Status;
+    }
+
+    Status = read_file(bs, fonts, L"cour.ttf", &console_font, &console_font_size);
+    if (EFI_ERROR(Status)) {
+        print_error(L"read_file", Status);
+        return Status;
+    }
 
     return EFI_SUCCESS;
 }
@@ -3887,11 +4185,7 @@ static EFI_STATUS boot(EFI_HANDLE image_handle, EFI_BOOT_SERVICES* bs, EFI_FILE_
         va = (uint8_t*)va + (allocation * EFI_PAGE_SIZE);
     }
 
-    Status = map_apic(bs, &mappings);
-    if (EFI_ERROR(Status)) {
-        print_error(L"map_apic", Status);
-        goto end;
-    }
+    find_apic();
 
     Status = map_nls(bs, &store->nls, &va, &mappings);
     if (EFI_ERROR(Status)) {
@@ -3917,6 +4211,12 @@ static EFI_STATUS boot(EFI_HANDLE image_handle, EFI_BOOT_SERVICES* bs, EFI_FILE_
     if (EFI_ERROR(Status)) {
         print_error(L"add_mapping", Status);
         goto end;
+    }
+
+    if (version >= _WIN32_WINNT_WIN8) {
+        Status = load_fonts(bs, windir);
+        if (EFI_ERROR(Status))
+            print_error(L"load_fonts", Status); // non-fatal
     }
 
     windir->Close(windir);
@@ -3976,6 +4276,27 @@ static EFI_STATUS boot(EFI_HANDLE image_handle, EFI_BOOT_SERVICES* bs, EFI_FILE_
         va = (uint8_t*)va + (pages * EFI_PAGE_SIZE);
 
         tssphys->Rsp0 = (uintptr_t)va; // end of stack
+
+        // Some interrupts, such as 2 (NMI), have their own stacks. We allocate all 8 just in case,
+        // but Windows won't use all of them.
+
+        for (unsigned int i = 0; i < 8; i++) {
+            Status = bs->AllocatePages(AllocateAnyPages, EfiLoaderData, pages, &addr);
+            if (EFI_ERROR(Status)) {
+                print_error(L"AllocatePages", Status);
+                goto end;
+            }
+
+            Status = add_mapping(bs, &mappings, va, (void*)(uintptr_t)addr, pages, LoaderStartupKernelStack);
+            if (EFI_ERROR(Status)) {
+                print_error(L"add_mapping", Status);
+                goto end;
+            }
+
+            va = (uint8_t*)va + (pages * EFI_PAGE_SIZE);
+
+            tssphys->Ist[i] = (uintptr_t)va; // end of stack
+        }
     }
 #endif
 
@@ -3993,9 +4314,8 @@ static EFI_STATUS boot(EFI_HANDLE image_handle, EFI_BOOT_SERVICES* bs, EFI_FILE_
         va = (uint8_t*)va + (PAGE_COUNT(store->debug_device_descriptor.TransportData.HwContextSize) * EFI_PAGE_SIZE);
     }
 
-#if 0
     if (version >= _WIN32_WINNT_WIN8) {
-        Status = set_graphics_mode(bs, image_handle, &mappings, &va, &store->bgc, extblock3);
+        Status = set_graphics_mode(bs, image_handle, &mappings, &va, version, build, &store->bgc, extblock3);
         if (EFI_ERROR(Status)) {
             print_error(L"set_graphics_mode", Status);
             print(L"GOP failed, falling back to CSM\r\n");
@@ -4004,15 +4324,12 @@ static EFI_STATUS boot(EFI_HANDLE image_handle, EFI_BOOT_SERVICES* bs, EFI_FILE_
         Status = EFI_NOT_FOUND;
 
     if (EFI_ERROR(Status)) {
-#endif
         Status = initialize_csm(image_handle, bs);
         if (EFI_ERROR(Status)) {
             print_error(L"initialize_csm", Status);
             goto end;
         }
-#if 0
     }
-#endif
 
     fix_store_mapping(store, store_va, &mappings, version, build);
 
@@ -4023,6 +4340,7 @@ static EFI_STATUS boot(EFI_HANDLE image_handle, EFI_BOOT_SERVICES* bs, EFI_FILE_
     }
 
     store = (loader_store*)store_va;
+    store2 = store;
 
     set_gdt(gdt);
     set_idt(idt);
@@ -4038,6 +4356,8 @@ static EFI_STATUS boot(EFI_HANDLE image_handle, EFI_BOOT_SERVICES* bs, EFI_FILE_
 
     if (kdstub_export_loaded)
         kdstub_init(&store->debug_device_descriptor, build);
+
+    // FIXME - can we print net_error_string and net_error_status somehow if this fails?
 
 #ifdef __x86_64__
     // set syscall flag in EFER MSR

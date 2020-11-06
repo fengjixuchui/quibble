@@ -36,13 +36,18 @@ HARDWARE_PTE_PAE* pml4;
 EFI_MEMORY_DESCRIPTOR* efi_memory_map;
 EFI_MEMORY_DESCRIPTOR* efi_runtime_map;
 UINTN efi_map_size, efi_runtime_map_size, map_desc_size;
+extern void* apic;
 
 static TYPE_OF_MEMORY map_memory_type(UINTN memory_type) {
     switch (memory_type) {
+        case EfiReservedMemoryType:
         case EfiACPIReclaimMemory:
         case EfiACPIMemoryNVS:
         case EfiPalCode:
             return LoaderSpecialMemory;
+
+        case EfiUnusableMemory:
+            return LoaderBad;
 
         default:
             return LoaderFree;
@@ -75,15 +80,17 @@ void* find_virtual_address(void* pa, LIST_ENTRY* mappings) {
     return NULL;
 }
 
-static EFI_STATUS map_memory(EFI_BOOT_SERVICES* bs, LIST_ENTRY* mappings, void* va, void* pa, unsigned int pages) {
+static EFI_STATUS map_memory(EFI_BOOT_SERVICES* bs, LIST_ENTRY* mappings, uintptr_t va, uintptr_t pa, unsigned int pages) {
+    uintptr_t pfn = pa >> EFI_PAGE_SHIFT;
+
 #ifdef _X86_
     UNUSED(mappings);
 
     if (pae) {
         do {
-            HARDWARE_PTE_PAE* dir = (HARDWARE_PTE_PAE*)(pdpt[(uintptr_t)va >> 30].PageFrameNumber * EFI_PAGE_SIZE);
-            unsigned int index = ((uintptr_t)va >> 21) & 0x1ff;
-            unsigned int index2 = ((uintptr_t)va & 0x1ff000) >> 12;
+            HARDWARE_PTE_PAE* dir = (HARDWARE_PTE_PAE*)(pdpt[va >> 30].PageFrameNumber * EFI_PAGE_SIZE);
+            unsigned int index = (va >> 21) & 0x1ff;
+            unsigned int index2 = (va & 0x1ff000) >> 12;
             HARDWARE_PTE_PAE* page_table;
 
             if (!dir[index].Valid) { // allocate new page table
@@ -106,18 +113,18 @@ static EFI_STATUS map_memory(EFI_BOOT_SERVICES* bs, LIST_ENTRY* mappings, void* 
             } else
                 page_table = (HARDWARE_PTE_PAE*)(dir[index].PageFrameNumber * EFI_PAGE_SIZE);
 
-            page_table[index2].PageFrameNumber = (uintptr_t)pa / EFI_PAGE_SIZE;
+            page_table[index2].PageFrameNumber = pfn;
             page_table[index2].Valid = 1;
             page_table[index2].Write = 1;
 
-            va = (void*)((uintptr_t)va + EFI_PAGE_SIZE);
-            pa = (void*)((uintptr_t)pa + EFI_PAGE_SIZE);
+            va += EFI_PAGE_SIZE;
+            pfn++;
             pages--;
         } while (pages > 0);
     } else {
         do {
-            unsigned int index = (uintptr_t)va >> 22;
-            unsigned int index2 = ((uintptr_t)va & 0x3ff000) >> 12;
+            unsigned int index = va >> 22;
+            unsigned int index2 = (va & 0x3ff000) >> 12;
             HARDWARE_PTE* page_table;
 
             if (!page_directory[index].Valid) { // allocate new page table
@@ -140,12 +147,12 @@ static EFI_STATUS map_memory(EFI_BOOT_SERVICES* bs, LIST_ENTRY* mappings, void* 
             } else
                 page_table = (HARDWARE_PTE*)(page_directory[index].PageFrameNumber * EFI_PAGE_SIZE);
 
-            page_table[index2].PageFrameNumber = (uintptr_t)pa / EFI_PAGE_SIZE;
+            page_table[index2].PageFrameNumber = pfn;
             page_table[index2].Valid = 1;
             page_table[index2].Write = 1;
 
-            va = (void*)((uintptr_t)va + EFI_PAGE_SIZE);
-            pa = (void*)((uintptr_t)pa + EFI_PAGE_SIZE);
+            va += EFI_PAGE_SIZE;
+            pfn++;
             pages--;
         } while (pages > 0);
     }
@@ -154,10 +161,10 @@ static EFI_STATUS map_memory(EFI_BOOT_SERVICES* bs, LIST_ENTRY* mappings, void* 
         HARDWARE_PTE_PAE* pdpt;
         HARDWARE_PTE_PAE* pd;
         HARDWARE_PTE_PAE* pt;
-        unsigned int index = ((uintptr_t)va & 0xff8000000000) >> 39;
-        unsigned int index2 = ((uintptr_t)va & 0x7fc0000000) >> 30;
-        unsigned int index3 = ((uintptr_t)va & 0x3fe00000) >> 21;
-        unsigned int index4 = ((uintptr_t)va & 0x1ff000) >> 12;
+        unsigned int index = (va & 0xff8000000000) >> 39;
+        unsigned int index2 = (va & 0x7fc0000000) >> 30;
+        unsigned int index3 = (va & 0x3fe00000) >> 21;
+        unsigned int index4 = (va & 0x1ff000) >> 12;
 
         if (!pml4[index].Valid) {
             EFI_STATUS Status;
@@ -182,8 +189,17 @@ static EFI_STATUS map_memory(EFI_BOOT_SERVICES* bs, LIST_ENTRY* mappings, void* 
             pml4[index].Write = 1;
 
             pdpt = (HARDWARE_PTE_PAE*)(uintptr_t)addr;
-        } else
-            pdpt = (HARDWARE_PTE_PAE*)(uintptr_t)(pml4[index].PageFrameNumber * EFI_PAGE_SIZE);
+        } else {
+            uint64_t ptr;
+
+            /* Somewhat surprising behaviour from gcc here - combining the following two lines into one
+             * results in the value being sign-extended. Compiler bug? */
+
+            ptr = pml4[index].PageFrameNumber;
+            ptr <<= EFI_PAGE_SHIFT;
+
+            pdpt = (HARDWARE_PTE_PAE*)(uintptr_t)ptr;
+        }
 
         if (!pdpt[index2].Valid) {
             EFI_STATUS Status;
@@ -208,8 +224,14 @@ static EFI_STATUS map_memory(EFI_BOOT_SERVICES* bs, LIST_ENTRY* mappings, void* 
             pdpt[index2].Write = 1;
 
             pd = (HARDWARE_PTE_PAE*)(uintptr_t)addr;
-        } else
-            pd = (HARDWARE_PTE_PAE*)(uintptr_t)(pdpt[index2].PageFrameNumber * EFI_PAGE_SIZE);
+        } else {
+            uint64_t ptr;
+
+            ptr = pdpt[index2].PageFrameNumber;
+            ptr <<= EFI_PAGE_SHIFT;
+
+            pd = (HARDWARE_PTE_PAE*)(uintptr_t)ptr;
+        }
 
         if (!pd[index3].Valid) {
             EFI_STATUS Status;
@@ -234,15 +256,21 @@ static EFI_STATUS map_memory(EFI_BOOT_SERVICES* bs, LIST_ENTRY* mappings, void* 
             pd[index3].Write = 1;
 
             pt = (HARDWARE_PTE_PAE*)(uintptr_t)addr;
-        } else
-            pt = (HARDWARE_PTE_PAE*)(uintptr_t)(pd[index3].PageFrameNumber * EFI_PAGE_SIZE);
+        } else {
+            uint64_t ptr;
 
-        pt[index4].PageFrameNumber = (uintptr_t)pa / EFI_PAGE_SIZE;
+            ptr = pd[index3].PageFrameNumber;
+            ptr <<= EFI_PAGE_SHIFT;
+
+            pt = (HARDWARE_PTE_PAE*)(uintptr_t)ptr;
+        }
+
+        pt[index4].PageFrameNumber = pfn;
         pt[index4].Valid = 1;
         pt[index4].Write = 1;
 
-        va = (void*)((uintptr_t)va + EFI_PAGE_SIZE);
-        pa = (void*)((uintptr_t)pa + EFI_PAGE_SIZE);
+        va += EFI_PAGE_SIZE;
+        pfn++;
         pages--;
     } while (pages > 0);
 #endif
@@ -422,6 +450,7 @@ EFI_STATUS process_memory_map(EFI_BOOT_SERVICES* bs, void** va, LIST_ENTRY* mapp
     UINT32 version;
     EFI_MEMORY_DESCRIPTOR* desc = NULL;
     uint8_t* va2 = *va;
+    bool map_video_ram = true;
 
     efi_map_size = 0;
 
@@ -469,6 +498,9 @@ EFI_STATUS process_memory_map(EFI_BOOT_SERVICES* bs, void** va, LIST_ENTRY* mapp
             }
 
             va2 += desc->NumberOfPages * EFI_PAGE_SIZE;
+
+            if (desc->PhysicalStart <= 0xa0000 && desc->PhysicalStart + (desc->NumberOfPages << EFI_PAGE_SHIFT) > 0xa0000)
+                map_video_ram = false;
         } else {
             Status = add_mapping(bs, mappings, NULL, (void*)(uintptr_t)desc->PhysicalStart,
                                  desc->NumberOfPages, LoaderFree);
@@ -491,12 +523,13 @@ EFI_STATUS process_memory_map(EFI_BOOT_SERVICES* bs, void** va, LIST_ENTRY* mapp
         desc = (EFI_MEMORY_DESCRIPTOR*)((uint8_t*)desc + map_desc_size);
     }
 
-    // add video RAM and BIOS ROM, not reported by GetMemoryMap
-    // FIXME - is there really no way to get this from EFI??
-    Status = add_mapping(bs, mappings, NULL, (void*)0xa0000, 0x60, LoaderFirmwarePermanent);
-    if (EFI_ERROR(Status)) {
-        print_error(L"add_mapping", Status);
-        return Status;
+    // add video RAM and BIOS ROM, if not reported by GetMemoryMap
+    if (map_video_ram) {
+        Status = add_mapping(bs, mappings, NULL, (void*)0xa0000, 0x60, LoaderFirmwarePermanent);
+        if (EFI_ERROR(Status)) {
+            print_error(L"add_mapping", Status);
+            return Status;
+        }
     }
 
     *va = va2;
@@ -738,8 +771,14 @@ static EFI_STATUS add_hal_mappings(EFI_BOOT_SERVICES* bs, LIST_ENTRY* mappings) 
         pml4[(HAL_MEMORY >> 39) & 0x1ff].Write = 1;
 
         pdpt = (HARDWARE_PTE_PAE*)(uintptr_t)addr;
-    } else
-        pdpt = (HARDWARE_PTE_PAE*)(uintptr_t)(pml4[(HAL_MEMORY >> 39) & 0x1ff].PageFrameNumber * EFI_PAGE_SIZE);
+    } else {
+        uint64_t ptr;
+
+        ptr = pml4[(HAL_MEMORY >> 39) & 0x1ff].PageFrameNumber;
+        ptr <<= EFI_PAGE_SHIFT;
+
+        pdpt = (HARDWARE_PTE_PAE*)(uintptr_t)ptr;
+    }
 
     if (!pdpt[(HAL_MEMORY >> 30) & 0x1ff].Valid) {
         EFI_STATUS Status;
@@ -764,8 +803,14 @@ static EFI_STATUS add_hal_mappings(EFI_BOOT_SERVICES* bs, LIST_ENTRY* mappings) 
         pdpt[(HAL_MEMORY >> 30) & 0x1ff].Write = 1;
 
         pd = (HARDWARE_PTE_PAE*)(uintptr_t)addr;
-    } else
-        pd = (HARDWARE_PTE_PAE*)(uintptr_t)(pdpt[(HAL_MEMORY >> 30) & 0x1ff].PageFrameNumber * EFI_PAGE_SIZE);
+    } else {
+        uint64_t ptr;
+
+        ptr = pdpt[(HAL_MEMORY >> 30) & 0x1ff].PageFrameNumber;
+        ptr <<= EFI_PAGE_SHIFT;
+
+        pd = (HARDWARE_PTE_PAE*)(uintptr_t)ptr;
+    }
 
     for (unsigned int i = 0; i < 2; i++) {
         if (!pd[((HAL_MEMORY >> 21) & 0x1ff) + i].Valid) {
@@ -808,8 +853,9 @@ EFI_STATUS map_efi_runtime(EFI_BOOT_SERVICES* bs, LIST_ENTRY* mappings, void** v
 
     for (unsigned int i = 0; i < efi_map_size / map_desc_size; i++) {
         if (desc->Type == EfiRuntimeServicesData || desc->Type == EfiRuntimeServicesCode ||
-            desc->Type == EfiMemoryMappedIO || desc->Type == EfiMemoryMappedIOPortSpace)
+            desc->Type == EfiMemoryMappedIO || desc->Type == EfiMemoryMappedIOPortSpace) {
             num_entries++;
+        }
 
         desc = (EFI_MEMORY_DESCRIPTOR*)((uint8_t*)desc + map_desc_size);
     }
@@ -844,7 +890,7 @@ EFI_STATUS map_efi_runtime(EFI_BOOT_SERVICES* bs, LIST_ENTRY* mappings, void** v
             desc2->Attribute = desc->Attribute;
 
             Status = add_mapping(bs, mappings, va2, (void*)(uintptr_t)desc->PhysicalStart,
-                                 desc->NumberOfPages, LoaderFirmwarePermanent);
+                                desc->NumberOfPages, LoaderFirmwarePermanent);
             if (EFI_ERROR(Status)) {
                 print_error(L"add_mapping", Status);
                 return Status;
@@ -1028,7 +1074,7 @@ EFI_STATUS enable_paging(EFI_HANDLE image_handle, EFI_BOOT_SERVICES* bs, LIST_EN
                 if ((uint8_t*)systable >= (uint8_t*)m->pa && (uint8_t*)systable < (uint8_t*)m->pa + (m->pages * EFI_PAGE_SIZE))
                     new_ST = (EFI_SYSTEM_TABLE*)((uint8_t*)systable - (uint8_t*)m->pa + (uint8_t*)m->va);
 
-                Status = map_memory(bs, mappings, m->va, m->pa, m->pages);
+                Status = map_memory(bs, mappings, (uintptr_t)m->va, (uintptr_t)m->pa, m->pages);
                 if (EFI_ERROR(Status)) {
                     print_error(L"map_memory", Status);
                     return Status;
@@ -1048,7 +1094,7 @@ EFI_STATUS enable_paging(EFI_HANDLE image_handle, EFI_BOOT_SERVICES* bs, LIST_EN
 
 #ifdef _X86_
     if (pae) { // map cr3
-        Status = map_memory(bs, mappings, (void*)((uintptr_t)pdpt + MM_KSEG0_BASE), pdpt, 1);
+        Status = map_memory(bs, mappings, ((uintptr_t)pdpt + MM_KSEG0_BASE), (uintptr_t)pdpt, 1);
         if (EFI_ERROR(Status)) {
             print_error(L"map_memory", Status);
             return Status;
@@ -1096,13 +1142,21 @@ EFI_STATUS enable_paging(EFI_HANDLE image_handle, EFI_BOOT_SERVICES* bs, LIST_EN
     }
 #endif
 
+    if (apic) {
+        Status = map_memory(bs, mappings, APIC_BASE, (uintptr_t)apic, 1);
+        if (EFI_ERROR(Status)) {
+            print_error(L"map_memory", Status);
+            return Status;
+        }
+    }
+
     Status = allocate_mdl(bs, mappings, va, &mdl_pa, &mdl_pages);
     if (EFI_ERROR(Status)) {
         print_error(L"allocate_mdl", Status);
         return Status;
     }
 
-    Status = map_memory(bs, mappings, va, mdl_pa, mdl_pages);
+    Status = map_memory(bs, mappings, (uintptr_t)va, (uintptr_t)mdl_pa, mdl_pages);
     if (EFI_ERROR(Status)) {
         print_error(L"map_memory", Status);
         return Status;
@@ -1117,7 +1171,25 @@ EFI_STATUS enable_paging(EFI_HANDLE image_handle, EFI_BOOT_SERVICES* bs, LIST_EN
     va = (uint8_t*)va + (mdl_pages * EFI_PAGE_SIZE);
 
     // get new key
-    bs->GetMemoryMap(&size, NULL, &key, &descsize, &version);
+    Status = bs->GetMemoryMap(&size, NULL, &key, &descsize, &version);
+    if (EFI_ERROR(Status) && Status != EFI_BUFFER_TOO_SMALL) {
+        print_error(L"GetMemoryMap", Status);
+        return Status;
+    }
+
+    size *= 2;
+
+    Status = bs->AllocatePool(EfiLoaderData, size, (void**)&mapdesc);
+    if (EFI_ERROR(Status)) {
+        print_error(L"AllocatePool", Status);
+        return Status;
+    }
+
+    Status = bs->GetMemoryMap(&size, mapdesc, &key, &descsize, &version);
+    if (EFI_ERROR(Status)) {
+        print_error(L"GetMemoryMap", Status);
+        return Status;
+    }
 
     Status = bs->ExitBootServices(image_handle, key);
     if (EFI_ERROR(Status)) {

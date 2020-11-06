@@ -62,7 +62,7 @@
 #define APIC_BASE               0xfffe0000
 #define KI_USER_SHARED_DATA     0xffdf0000
 #define KIP0PCRADDRESS          0xffdff000
-#define PCR_PAGES               7 // good enough up to 1909, at least
+#define PCR_PAGES               7 // 0x6020 bytes as of 2004
 #elif defined(__x86_64__)
 #define SELFMAP                 0xfffff68000000000
 #define SELFMAP_PD              0xfffff6fb40000000
@@ -70,7 +70,7 @@
 #define SELFMAP_PML4            0xfffff6fb7dbed000
 #define APIC_BASE               0xfffffffffffe0000
 #define KI_USER_SHARED_DATA     0xfffff78000000000
-#define PCR_PAGES               0xa // good enough up to 1909, at least
+#define PCR_PAGES               0xc // 0xb080 bytes as of 2004
 #endif
 
 #define _WIN32_WINNT_NT4                    0x0400
@@ -92,6 +92,7 @@
 #define WIN10_BUILD_1809            17763
 #define WIN10_BUILD_1903            18362
 #define WIN10_BUILD_1909            18363
+#define WIN10_BUILD_2004            19041
 
 #define NTDDI_WIN7                          0x06010000
 #define NTDDI_WIN8                          0x06020000
@@ -104,6 +105,7 @@
 #define NTDDI_WIN10_RS4                     0x0a000005 // 1803
 #define NTDDI_WIN10_RS5                     0x0a000006 // 1809
 #define NTDDI_WIN10_19H1                    0x0a000007 // 1903
+#define NTDDI_WIN10_20H1                    0x0a000008 // 2004
 
 #define STATUS_NOT_IMPLEMENTED 0xC0000002
 
@@ -316,6 +318,9 @@ typedef struct {
     SMBIOS_TABLE_HEADER* SMBiosEPSHeader;
     void* DrvDBImage;
     uintptr_t DrvDBSize;
+} LOADER_EXTENSION_BLOCK1B;
+
+typedef struct {
     NETWORK_LOADER_BLOCK* NetworkLoaderBlock;
 #ifndef __x86_64__
     uint8_t* HalpIRQLToTPR;
@@ -324,7 +329,7 @@ typedef struct {
     LIST_ENTRY FirmwareDescriptorListHead;
     void* AcpiTable;
     uint32_t AcpiTableSize;
-} LOADER_EXTENSION_BLOCK1B;
+} LOADER_EXTENSION_BLOCK1C;
 
 typedef struct {
     uint32_t Size;
@@ -337,6 +342,7 @@ typedef struct {
     LOADER_EXTENSION_BLOCK1A Block1a;
     uintptr_t LoaderPagesSpanned;
     LOADER_EXTENSION_BLOCK1B Block1b;
+    LOADER_EXTENSION_BLOCK1C Block1c;
 #ifdef __x86_64__
     uint32_t padding2;
 #endif
@@ -358,10 +364,10 @@ static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WS03, Block1b.HeadlessLoaderBl
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WS03, Block1b.SMBiosEPSHeader) == 0x30, "LOADER_PARAMETER_EXTENSION_WS03 SMBiosEPSHeader");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WS03, Block1b.DrvDBImage) == 0x34, "LOADER_PARAMETER_EXTENSION_WS03 DrvDBImage");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WS03, Block1b.DrvDBSize) == 0x38, "LOADER_PARAMETER_EXTENSION_WS03 DrvDBSize");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WS03, Block1b.NetworkLoaderBlock) == 0x3c, "LOADER_PARAMETER_EXTENSION_WS03 NetworkLoaderBlock");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WS03, Block1b.FirmwareDescriptorListHead) == 0x48, "LOADER_PARAMETER_EXTENSION_WS03 FirmwareDescriptorListHead");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WS03, Block1b.AcpiTable) == 0x50, "LOADER_PARAMETER_EXTENSION_WS03 AcpiTable");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WS03, Block1b.AcpiTableSize) == 0x54, "LOADER_PARAMETER_EXTENSION_WS03 AcpiTableSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WS03, Block1c.NetworkLoaderBlock) == 0x3c, "LOADER_PARAMETER_EXTENSION_WS03 NetworkLoaderBlock");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WS03, Block1c.FirmwareDescriptorListHead) == 0x48, "LOADER_PARAMETER_EXTENSION_WS03 FirmwareDescriptorListHead");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WS03, Block1c.AcpiTable) == 0x50, "LOADER_PARAMETER_EXTENSION_WS03 AcpiTable");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WS03, Block1c.AcpiTableSize) == 0x54, "LOADER_PARAMETER_EXTENSION_WS03 AcpiTableSize");
 #elif defined(__x86_64__)
 static_assert(sizeof(LOADER_PARAMETER_EXTENSION_WS03) == 0x88, "LOADER_PARAMETER_EXTENSION_WS03 has incorrect size.");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WS03, Size) == 0x0, "LOADER_PARAMETER_EXTENSION_WS03 Size");
@@ -376,10 +382,10 @@ static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WS03, Block1b.HeadlessLoaderBl
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WS03, Block1b.SMBiosEPSHeader) == 0x48, "LOADER_PARAMETER_EXTENSION_WS03 SMBiosEPSHeader");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WS03, Block1b.DrvDBImage) == 0x50, "LOADER_PARAMETER_EXTENSION_WS03 DrvDBImage");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WS03, Block1b.DrvDBSize) == 0x58, "LOADER_PARAMETER_EXTENSION_WS03 DrvDBSize");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WS03, Block1b.NetworkLoaderBlock) == 0x60, "LOADER_PARAMETER_EXTENSION_WS03 NetworkLoaderBlock");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WS03, Block1b.FirmwareDescriptorListHead) == 0x68, "LOADER_PARAMETER_EXTENSION_WS03 FirmwareDescriptorListHead");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WS03, Block1b.AcpiTable) == 0x78, "LOADER_PARAMETER_EXTENSION_WS03 AcpiTable");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WS03, Block1b.AcpiTableSize) == 0x80, "LOADER_PARAMETER_EXTENSION_WS03 AcpiTableSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WS03, Block1c.NetworkLoaderBlock) == 0x60, "LOADER_PARAMETER_EXTENSION_WS03 NetworkLoaderBlock");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WS03, Block1c.FirmwareDescriptorListHead) == 0x68, "LOADER_PARAMETER_EXTENSION_WS03 FirmwareDescriptorListHead");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WS03, Block1c.AcpiTable) == 0x78, "LOADER_PARAMETER_EXTENSION_WS03 AcpiTable");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WS03, Block1c.AcpiTableSize) == 0x80, "LOADER_PARAMETER_EXTENSION_WS03 AcpiTableSize");
 #endif
 
 typedef struct {
@@ -412,6 +418,7 @@ typedef struct {
     LOADER_EXTENSION_BLOCK1A Block1a;
     uintptr_t LoaderPagesSpanned;
     LOADER_EXTENSION_BLOCK1B Block1b;
+    LOADER_EXTENSION_BLOCK1C Block1c;
     LOADER_EXTENSION_BLOCK2A Block2a;
     LOADER_PERFORMANCE_DATA* LoaderPerformanceData;
     LOADER_EXTENSION_BLOCK2B Block2b;
@@ -433,10 +440,10 @@ static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA, Block1b.HeadlessLoaderB
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA, Block1b.SMBiosEPSHeader) == 0x30, "LOADER_PARAMETER_EXTENSION_VISTA SMBiosEPSHeader");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA, Block1b.DrvDBImage) == 0x34, "LOADER_PARAMETER_EXTENSION_VISTA DrvDBImage");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA, Block1b.DrvDBSize) == 0x38, "LOADER_PARAMETER_EXTENSION_VISTA DrvDBSize");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA, Block1b.NetworkLoaderBlock) == 0x3c, "LOADER_PARAMETER_EXTENSION_VISTA NetworkLoaderBlock");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA, Block1b.FirmwareDescriptorListHead) == 0x48, "LOADER_PARAMETER_EXTENSION_VISTA FirmwareDescriptorListHead");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA, Block1b.AcpiTable) == 0x50, "LOADER_PARAMETER_EXTENSION_VISTA AcpiTable");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA, Block1b.AcpiTableSize) == 0x54, "LOADER_PARAMETER_EXTENSION_VISTA AcpiTableSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA, Block1c.NetworkLoaderBlock) == 0x3c, "LOADER_PARAMETER_EXTENSION_VISTA NetworkLoaderBlock");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA, Block1c.FirmwareDescriptorListHead) == 0x48, "LOADER_PARAMETER_EXTENSION_VISTA FirmwareDescriptorListHead");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA, Block1c.AcpiTable) == 0x50, "LOADER_PARAMETER_EXTENSION_VISTA AcpiTable");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA, Block1c.AcpiTableSize) == 0x54, "LOADER_PARAMETER_EXTENSION_VISTA AcpiTableSize");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA, LoaderPerformanceData) == 0x5c, "LOADER_PARAMETER_EXTENSION_VISTA LoaderPerformanceData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA, Block2b.BootApplicationPersistentData) == 0x60, "LOADER_PARAMETER_EXTENSION_VISTA BootApplicationPersistentData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA, Block2b.WmdTestResult) == 0x68, "LOADER_PARAMETER_EXTENSION_VISTA WmdTestResult");
@@ -455,10 +462,10 @@ static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA, Block1b.HeadlessLoaderB
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA, Block1b.SMBiosEPSHeader) == 0x48, "LOADER_PARAMETER_EXTENSION_VISTA SMBiosEPSHeader");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA, Block1b.DrvDBImage) == 0x50, "LOADER_PARAMETER_EXTENSION_VISTA DrvDBImage");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA, Block1b.DrvDBSize) == 0x58, "LOADER_PARAMETER_EXTENSION_VISTA DrvDBSize");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA, Block1b.NetworkLoaderBlock) == 0x60, "LOADER_PARAMETER_EXTENSION_VISTA NetworkLoaderBlock");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA, Block1b.FirmwareDescriptorListHead) == 0x68, "LOADER_PARAMETER_EXTENSION_VISTA FirmwareDescriptorListHead");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA, Block1b.AcpiTable) == 0x78, "LOADER_PARAMETER_EXTENSION_VISTA AcpiTable");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA, Block1b.AcpiTableSize) == 0x80, "LOADER_PARAMETER_EXTENSION_VISTA AcpiTableSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA, Block1c.NetworkLoaderBlock) == 0x60, "LOADER_PARAMETER_EXTENSION_VISTA NetworkLoaderBlock");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA, Block1c.FirmwareDescriptorListHead) == 0x68, "LOADER_PARAMETER_EXTENSION_VISTA FirmwareDescriptorListHead");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA, Block1c.AcpiTable) == 0x78, "LOADER_PARAMETER_EXTENSION_VISTA AcpiTable");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA, Block1c.AcpiTableSize) == 0x80, "LOADER_PARAMETER_EXTENSION_VISTA AcpiTableSize");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA, LoaderPerformanceData) == 0x88, "LOADER_PARAMETER_EXTENSION_VISTA LoaderPerformanceData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA, Block2b.BootApplicationPersistentData) == 0x90, "LOADER_PARAMETER_EXTENSION_VISTA BootApplicationPersistentData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA, Block2b.WmdTestResult) == 0xa0, "LOADER_PARAMETER_EXTENSION_VISTA WmdTestResult");
@@ -478,6 +485,7 @@ typedef struct {
     LOADER_EXTENSION_BLOCK1A Block1a;
     uintptr_t LoaderPagesSpanned;
     LOADER_EXTENSION_BLOCK1B Block1b;
+    LOADER_EXTENSION_BLOCK1C Block1c;
     LOADER_EXTENSION_BLOCK2A Block2a;
     LOADER_PERFORMANCE_DATA* LoaderPerformanceData;
     LOADER_EXTENSION_BLOCK2B Block2b;
@@ -501,10 +509,10 @@ static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA_SP2, Block1b.HeadlessLoa
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA_SP2, Block1b.SMBiosEPSHeader) == 0x30, "LOADER_PARAMETER_EXTENSION_VISTA_SP2 SMBiosEPSHeader");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA_SP2, Block1b.DrvDBImage) == 0x34, "LOADER_PARAMETER_EXTENSION_VISTA_SP2 DrvDBImage");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA_SP2, Block1b.DrvDBSize) == 0x38, "LOADER_PARAMETER_EXTENSION_VISTA_SP2 DrvDBSize");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA_SP2, Block1b.NetworkLoaderBlock) == 0x3c, "LOADER_PARAMETER_EXTENSION_VISTA_SP2 NetworkLoaderBlock");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA_SP2, Block1b.FirmwareDescriptorListHead) == 0x48, "LOADER_PARAMETER_EXTENSION_VISTA_SP2 FirmwareDescriptorListHead");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA_SP2, Block1b.AcpiTable) == 0x50, "LOADER_PARAMETER_EXTENSION_VISTA_SP2 AcpiTable");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA_SP2, Block1b.AcpiTableSize) == 0x54, "LOADER_PARAMETER_EXTENSION_VISTA_SP2 AcpiTableSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA_SP2, Block1c.NetworkLoaderBlock) == 0x3c, "LOADER_PARAMETER_EXTENSION_VISTA_SP2 NetworkLoaderBlock");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA_SP2, Block1c.FirmwareDescriptorListHead) == 0x48, "LOADER_PARAMETER_EXTENSION_VISTA_SP2 FirmwareDescriptorListHead");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA_SP2, Block1c.AcpiTable) == 0x50, "LOADER_PARAMETER_EXTENSION_VISTA_SP2 AcpiTable");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA_SP2, Block1c.AcpiTableSize) == 0x54, "LOADER_PARAMETER_EXTENSION_VISTA_SP2 AcpiTableSize");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA_SP2, LoaderPerformanceData) == 0x5c, "LOADER_PARAMETER_EXTENSION_VISTA_SP2 LoaderPerformanceData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA_SP2, Block2b.BootApplicationPersistentData) == 0x60, "LOADER_PARAMETER_EXTENSION_VISTA_SP2 BootApplicationPersistentData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA_SP2, Block2b.WmdTestResult) == 0x68, "LOADER_PARAMETER_EXTENSION_VISTA_SP2 WmdTestResult");
@@ -525,10 +533,10 @@ static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA_SP2, Block1b.HeadlessLoa
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA_SP2, Block1b.SMBiosEPSHeader) == 0x48, "LOADER_PARAMETER_EXTENSION_VISTA_SP2 SMBiosEPSHeader");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA_SP2, Block1b.DrvDBImage) == 0x50, "LOADER_PARAMETER_EXTENSION_VISTA_SP2 DrvDBImage");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA_SP2, Block1b.DrvDBSize) == 0x58, "LOADER_PARAMETER_EXTENSION_VISTA_SP2 DrvDBSize");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA_SP2, Block1b.NetworkLoaderBlock) == 0x60, "LOADER_PARAMETER_EXTENSION_VISTA_SP2 NetworkLoaderBlock");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA_SP2, Block1b.FirmwareDescriptorListHead) == 0x68, "LOADER_PARAMETER_EXTENSION_VISTA_SP2 FirmwareDescriptorListHead");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA_SP2, Block1b.AcpiTable) == 0x78, "LOADER_PARAMETER_EXTENSION_VISTA_SP2 AcpiTable");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA_SP2, Block1b.AcpiTableSize) == 0x80, "LOADER_PARAMETER_EXTENSION_VISTA_SP2 AcpiTableSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA_SP2, Block1c.NetworkLoaderBlock) == 0x60, "LOADER_PARAMETER_EXTENSION_VISTA_SP2 NetworkLoaderBlock");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA_SP2, Block1c.FirmwareDescriptorListHead) == 0x68, "LOADER_PARAMETER_EXTENSION_VISTA_SP2 FirmwareDescriptorListHead");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA_SP2, Block1c.AcpiTable) == 0x78, "LOADER_PARAMETER_EXTENSION_VISTA_SP2 AcpiTable");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA_SP2, Block1c.AcpiTableSize) == 0x80, "LOADER_PARAMETER_EXTENSION_VISTA_SP2 AcpiTableSize");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA_SP2, LoaderPerformanceData) == 0x88, "LOADER_PARAMETER_EXTENSION_VISTA_SP2 LoaderPerformanceData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA_SP2, Block2b.BootApplicationPersistentData) == 0x90, "LOADER_PARAMETER_EXTENSION_VISTA_SP2 BootApplicationPersistentData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_VISTA_SP2, Block2b.WmdTestResult) == 0xa0, "LOADER_PARAMETER_EXTENSION_VISTA_SP2 WmdTestResult");
@@ -576,6 +584,7 @@ typedef struct {
     LOADER_EXTENSION_BLOCK1A Block1a;
     uintptr_t LoaderPagesSpanned;
     LOADER_EXTENSION_BLOCK1B Block1b;
+    LOADER_EXTENSION_BLOCK1C Block1c;
     LOADER_EXTENSION_BLOCK2A Block2a;
     LOADER_PERFORMANCE_DATA* LoaderPerformanceData;
     LOADER_EXTENSION_BLOCK2B Block2b;
@@ -599,10 +608,10 @@ static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN7, Block1b.HeadlessLoaderBl
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN7, Block1b.SMBiosEPSHeader) == 0x28, "LOADER_PARAMETER_EXTENSION_WIN7 SMBiosEPSHeader");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN7, Block1b.DrvDBImage) == 0x2c, "LOADER_PARAMETER_EXTENSION_WIN7 DrvDBImage");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN7, Block1b.DrvDBSize) == 0x30, "LOADER_PARAMETER_EXTENSION_WIN7 DrvDBSize");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN7, Block1b.NetworkLoaderBlock) == 0x34, "LOADER_PARAMETER_EXTENSION_WIN7 NetworkLoaderBlock");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN7, Block1b.FirmwareDescriptorListHead) == 0x40, "LOADER_PARAMETER_EXTENSION_WIN7 FirmwareDescriptorListHead");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN7, Block1b.AcpiTable) == 0x48, "LOADER_PARAMETER_EXTENSION_WIN7 AcpiTable");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN7, Block1b.AcpiTableSize) == 0x4c, "LOADER_PARAMETER_EXTENSION_WIN7 AcpiTableSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN7, Block1c.NetworkLoaderBlock) == 0x34, "LOADER_PARAMETER_EXTENSION_WIN7 NetworkLoaderBlock");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN7, Block1c.FirmwareDescriptorListHead) == 0x40, "LOADER_PARAMETER_EXTENSION_WIN7 FirmwareDescriptorListHead");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN7, Block1c.AcpiTable) == 0x48, "LOADER_PARAMETER_EXTENSION_WIN7 AcpiTable");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN7, Block1c.AcpiTableSize) == 0x4c, "LOADER_PARAMETER_EXTENSION_WIN7 AcpiTableSize");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN7, LoaderPerformanceData) == 0x54, "LOADER_PARAMETER_EXTENSION_WIN7 LoaderPerformanceData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN7, Block2b.BootApplicationPersistentData) == 0x58, "LOADER_PARAMETER_EXTENSION_WIN7 BootApplicationPersistentData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN7, Block2b.WmdTestResult) == 0x60, "LOADER_PARAMETER_EXTENSION_WIN7 WmdTestResult");
@@ -629,10 +638,10 @@ static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN7, Block1b.HeadlessLoaderBl
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN7, Block1b.SMBiosEPSHeader) == 0x40, "LOADER_PARAMETER_EXTENSION_WIN7 SMBiosEPSHeader");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN7, Block1b.DrvDBImage) == 0x48, "LOADER_PARAMETER_EXTENSION_WIN7 DrvDBImage");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN7, Block1b.DrvDBSize) == 0x50, "LOADER_PARAMETER_EXTENSION_WIN7 DrvDBSize");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN7, Block1b.NetworkLoaderBlock) == 0x58, "LOADER_PARAMETER_EXTENSION_WIN7 NetworkLoaderBlock");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN7, Block1b.FirmwareDescriptorListHead) == 0x60, "LOADER_PARAMETER_EXTENSION_WIN7 FirmwareDescriptorListHead");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN7, Block1b.AcpiTable) == 0x70, "LOADER_PARAMETER_EXTENSION_WIN7 AcpiTable");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN7, Block1b.AcpiTableSize) == 0x78, "LOADER_PARAMETER_EXTENSION_WIN7 AcpiTableSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN7, Block1c.NetworkLoaderBlock) == 0x58, "LOADER_PARAMETER_EXTENSION_WIN7 NetworkLoaderBlock");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN7, Block1c.FirmwareDescriptorListHead) == 0x60, "LOADER_PARAMETER_EXTENSION_WIN7 FirmwareDescriptorListHead");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN7, Block1c.AcpiTable) == 0x70, "LOADER_PARAMETER_EXTENSION_WIN7 AcpiTable");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN7, Block1c.AcpiTableSize) == 0x78, "LOADER_PARAMETER_EXTENSION_WIN7 AcpiTableSize");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN7, LoaderPerformanceData) == 0x80, "LOADER_PARAMETER_EXTENSION_WIN7 LoaderPerformanceData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN7, Block2b.BootApplicationPersistentData) == 0x88, "LOADER_PARAMETER_EXTENSION_WIN7 BootApplicationPersistentData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN7, Block2b.WmdTestResult) == 0x98, "LOADER_PARAMETER_EXTENSION_WIN7 WmdTestResult");
@@ -741,6 +750,7 @@ typedef struct {
 #endif
     LOADER_EXTENSION_BLOCK1A Block1a;
     LOADER_EXTENSION_BLOCK1B Block1b;
+    LOADER_EXTENSION_BLOCK1C Block1c;
     LOADER_EXTENSION_BLOCK2A Block2a;
     LOADER_PERFORMANCE_DATA* LoaderPerformanceData;
     LOADER_EXTENSION_BLOCK2B Block2b;
@@ -775,10 +785,10 @@ static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN8, Block1b.HeadlessLoaderBl
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN8, Block1b.SMBiosEPSHeader) == 0x24, "LOADER_PARAMETER_EXTENSION_WIN8 SMBiosEPSHeader");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN8, Block1b.DrvDBImage) == 0x28, "LOADER_PARAMETER_EXTENSION_WIN8 DrvDBImage");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN8, Block1b.DrvDBSize) == 0x2c, "LOADER_PARAMETER_EXTENSION_WIN8 DrvDBSize");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN8, Block1b.NetworkLoaderBlock) == 0x30, "LOADER_PARAMETER_EXTENSION_WIN8 NetworkLoaderBlock");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN8, Block1b.FirmwareDescriptorListHead) == 0x3c, "LOADER_PARAMETER_EXTENSION_WIN8 FirmwareDescriptorListHead");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN8, Block1b.AcpiTable) == 0x44, "LOADER_PARAMETER_EXTENSION_WIN8 AcpiTable");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN8, Block1b.AcpiTableSize) == 0x48, "LOADER_PARAMETER_EXTENSION_WIN8 AcpiTableSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN8, Block1c.NetworkLoaderBlock) == 0x30, "LOADER_PARAMETER_EXTENSION_WIN8 NetworkLoaderBlock");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN8, Block1c.FirmwareDescriptorListHead) == 0x3c, "LOADER_PARAMETER_EXTENSION_WIN8 FirmwareDescriptorListHead");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN8, Block1c.AcpiTable) == 0x44, "LOADER_PARAMETER_EXTENSION_WIN8 AcpiTable");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN8, Block1c.AcpiTableSize) == 0x48, "LOADER_PARAMETER_EXTENSION_WIN8 AcpiTableSize");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN8, LoaderPerformanceData) == 0x50, "LOADER_PARAMETER_EXTENSION_WIN8 LoaderPerformanceData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN8, Block2b.BootApplicationPersistentData) == 0x54, "LOADER_PARAMETER_EXTENSION_WIN8 BootApplicationPersistentData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN8, Block2b.WmdTestResult) == 0x5c, "LOADER_PARAMETER_EXTENSION_WIN8 WmdTestResult");
@@ -816,10 +826,10 @@ static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN8, Block1b.HeadlessLoaderBl
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN8, Block1b.SMBiosEPSHeader) == 0x38, "LOADER_PARAMETER_EXTENSION_WIN8 SMBiosEPSHeader");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN8, Block1b.DrvDBImage) == 0x40, "LOADER_PARAMETER_EXTENSION_WIN8 DrvDBImage");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN8, Block1b.DrvDBSize) == 0x48, "LOADER_PARAMETER_EXTENSION_WIN8 DrvDBSize");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN8, Block1b.NetworkLoaderBlock) == 0x50, "LOADER_PARAMETER_EXTENSION_WIN8 NetworkLoaderBlock");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN8, Block1b.FirmwareDescriptorListHead) == 0x58, "LOADER_PARAMETER_EXTENSION_WIN8 FirmwareDescriptorListHead");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN8, Block1b.AcpiTable) == 0x68, "LOADER_PARAMETER_EXTENSION_WIN8 AcpiTable");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN8, Block1b.AcpiTableSize) == 0x70, "LOADER_PARAMETER_EXTENSION_WIN8 AcpiTableSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN8, Block1c.NetworkLoaderBlock) == 0x50, "LOADER_PARAMETER_EXTENSION_WIN8 NetworkLoaderBlock");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN8, Block1c.FirmwareDescriptorListHead) == 0x58, "LOADER_PARAMETER_EXTENSION_WIN8 FirmwareDescriptorListHead");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN8, Block1c.AcpiTable) == 0x68, "LOADER_PARAMETER_EXTENSION_WIN8 AcpiTable");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN8, Block1c.AcpiTableSize) == 0x70, "LOADER_PARAMETER_EXTENSION_WIN8 AcpiTableSize");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN8, LoaderPerformanceData) == 0x78, "LOADER_PARAMETER_EXTENSION_WIN8 LoaderPerformanceData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN8, Block2b.BootApplicationPersistentData) == 0x80, "LOADER_PARAMETER_EXTENSION_WIN8 BootApplicationPersistentData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN8, Block2b.WmdTestResult) == 0x90, "LOADER_PARAMETER_EXTENSION_WIN8 WmdTestResult");
@@ -969,6 +979,7 @@ typedef struct {
 #endif
     LOADER_EXTENSION_BLOCK1A Block1a;
     LOADER_EXTENSION_BLOCK1B Block1b;
+    LOADER_EXTENSION_BLOCK1C Block1c;
     LOADER_EXTENSION_BLOCK2A Block2a;
     LOADER_PERFORMANCE_DATA* LoaderPerformanceData;
     LOADER_EXTENSION_BLOCK2B Block2b;
@@ -1003,10 +1014,10 @@ static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN81, Block1b.HeadlessLoaderB
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN81, Block1b.SMBiosEPSHeader) == 0x24, "LOADER_PARAMETER_EXTENSION_WIN81 SMBiosEPSHeader");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN81, Block1b.DrvDBImage) == 0x28, "LOADER_PARAMETER_EXTENSION_WIN81 DrvDBImage");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN81, Block1b.DrvDBSize) == 0x2c, "LOADER_PARAMETER_EXTENSION_WIN81 DrvDBSize");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN81, Block1b.NetworkLoaderBlock) == 0x30, "LOADER_PARAMETER_EXTENSION_WIN81 NetworkLoaderBlock");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN81, Block1b.FirmwareDescriptorListHead) == 0x3c, "LOADER_PARAMETER_EXTENSION_WIN81 FirmwareDescriptorListHead");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN81, Block1b.AcpiTable) == 0x44, "LOADER_PARAMETER_EXTENSION_WIN81 AcpiTable");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN81, Block1b.AcpiTableSize) == 0x48, "LOADER_PARAMETER_EXTENSION_WIN81 AcpiTableSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN81, Block1c.NetworkLoaderBlock) == 0x30, "LOADER_PARAMETER_EXTENSION_WIN81 NetworkLoaderBlock");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN81, Block1c.FirmwareDescriptorListHead) == 0x3c, "LOADER_PARAMETER_EXTENSION_WIN81 FirmwareDescriptorListHead");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN81, Block1c.AcpiTable) == 0x44, "LOADER_PARAMETER_EXTENSION_WIN81 AcpiTable");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN81, Block1c.AcpiTableSize) == 0x48, "LOADER_PARAMETER_EXTENSION_WIN81 AcpiTableSize");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN81, LoaderPerformanceData) == 0x50, "LOADER_PARAMETER_EXTENSION_WIN81 LoaderPerformanceData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN81, Block2b.BootApplicationPersistentData) == 0x54, "LOADER_PARAMETER_EXTENSION_WIN81 BootApplicationPersistentData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN81, Block2b.WmdTestResult) == 0x5c, "LOADER_PARAMETER_EXTENSION_WIN81 WmdTestResult");
@@ -1050,10 +1061,10 @@ static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN81, Block1b.HeadlessLoaderB
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN81, Block1b.SMBiosEPSHeader) == 0x38, "LOADER_PARAMETER_EXTENSION_WIN81 SMBiosEPSHeader");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN81, Block1b.DrvDBImage) == 0x40, "LOADER_PARAMETER_EXTENSION_WIN81 DrvDBImage");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN81, Block1b.DrvDBSize) == 0x48, "LOADER_PARAMETER_EXTENSION_WIN81 DrvDBSize");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN81, Block1b.NetworkLoaderBlock) == 0x50, "LOADER_PARAMETER_EXTENSION_WIN81 NetworkLoaderBlock");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN81, Block1b.FirmwareDescriptorListHead) == 0x58, "LOADER_PARAMETER_EXTENSION_WIN81 FirmwareDescriptorListHead");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN81, Block1b.AcpiTable) == 0x68, "LOADER_PARAMETER_EXTENSION_WIN81 AcpiTable");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN81, Block1b.AcpiTableSize) == 0x70, "LOADER_PARAMETER_EXTENSION_WIN81 AcpiTableSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN81, Block1c.NetworkLoaderBlock) == 0x50, "LOADER_PARAMETER_EXTENSION_WIN81 NetworkLoaderBlock");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN81, Block1c.FirmwareDescriptorListHead) == 0x58, "LOADER_PARAMETER_EXTENSION_WIN81 FirmwareDescriptorListHead");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN81, Block1c.AcpiTable) == 0x68, "LOADER_PARAMETER_EXTENSION_WIN81 AcpiTable");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN81, Block1c.AcpiTableSize) == 0x70, "LOADER_PARAMETER_EXTENSION_WIN81 AcpiTableSize");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN81, LoaderPerformanceData) == 0x78, "LOADER_PARAMETER_EXTENSION_WIN81 LoaderPerformanceData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN81, Block2b.BootApplicationPersistentData) == 0x80, "LOADER_PARAMETER_EXTENSION_WIN81 BootApplicationPersistentData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN81, Block2b.WmdTestResult) == 0x90, "LOADER_PARAMETER_EXTENSION_WIN81 WmdTestResult");
@@ -1130,6 +1141,7 @@ typedef struct {
 #endif
     LOADER_EXTENSION_BLOCK1A Block1a;
     LOADER_EXTENSION_BLOCK1B Block1b;
+    LOADER_EXTENSION_BLOCK1C Block1c;
     LOADER_EXTENSION_BLOCK2A Block2a;
     LOADER_PERFORMANCE_DATA* LoaderPerformanceData;
     LOADER_EXTENSION_BLOCK2B Block2b;
@@ -1168,10 +1180,10 @@ static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10, Block1b.HeadlessLoaderB
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10, Block1b.SMBiosEPSHeader) == 0x24, "LOADER_PARAMETER_EXTENSION_WIN10 SMBiosEPSHeader");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10, Block1b.DrvDBImage) == 0x28, "LOADER_PARAMETER_EXTENSION_WIN10 DrvDBImage");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10, Block1b.DrvDBSize) == 0x2c, "LOADER_PARAMETER_EXTENSION_WIN10 DrvDBSize");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10, Block1b.NetworkLoaderBlock) == 0x30, "LOADER_PARAMETER_EXTENSION_WIN10 NetworkLoaderBlock");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10, Block1b.FirmwareDescriptorListHead) == 0x3c, "LOADER_PARAMETER_EXTENSION_WIN10 FirmwareDescriptorListHead");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10, Block1b.AcpiTable) == 0x44, "LOADER_PARAMETER_EXTENSION_WIN10 AcpiTable");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10, Block1b.AcpiTableSize) == 0x48, "LOADER_PARAMETER_EXTENSION_WIN10 AcpiTableSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10, Block1c.NetworkLoaderBlock) == 0x30, "LOADER_PARAMETER_EXTENSION_WIN10 NetworkLoaderBlock");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10, Block1c.FirmwareDescriptorListHead) == 0x3c, "LOADER_PARAMETER_EXTENSION_WIN10 FirmwareDescriptorListHead");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10, Block1c.AcpiTable) == 0x44, "LOADER_PARAMETER_EXTENSION_WIN10 AcpiTable");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10, Block1c.AcpiTableSize) == 0x48, "LOADER_PARAMETER_EXTENSION_WIN10 AcpiTableSize");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10, LoaderPerformanceData) == 0x50, "LOADER_PARAMETER_EXTENSION_WIN10 LoaderPerformanceData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10, Block2b.BootApplicationPersistentData) == 0x54, "LOADER_PARAMETER_EXTENSION_WIN10 BootApplicationPersistentData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10, Block2b.WmdTestResult) == 0x5c, "LOADER_PARAMETER_EXTENSION_WIN10 WmdTestResult");
@@ -1224,10 +1236,10 @@ static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10, Block1b.HeadlessLoaderB
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10, Block1b.SMBiosEPSHeader) == 0x38, "LOADER_PARAMETER_EXTENSION_WIN10 SMBiosEPSHeader");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10, Block1b.DrvDBImage) == 0x40, "LOADER_PARAMETER_EXTENSION_WIN10 DrvDBImage");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10, Block1b.DrvDBSize) == 0x48, "LOADER_PARAMETER_EXTENSION_WIN10 DrvDBSize");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10, Block1b.NetworkLoaderBlock) == 0x50, "LOADER_PARAMETER_EXTENSION_WIN10 NetworkLoaderBlock");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10, Block1b.FirmwareDescriptorListHead) == 0x58, "LOADER_PARAMETER_EXTENSION_WIN10 FirmwareDescriptorListHead");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10, Block1b.AcpiTable) == 0x68, "LOADER_PARAMETER_EXTENSION_WIN10 AcpiTable");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10, Block1b.AcpiTableSize) == 0x70, "LOADER_PARAMETER_EXTENSION_WIN10 AcpiTableSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10, Block1c.NetworkLoaderBlock) == 0x50, "LOADER_PARAMETER_EXTENSION_WIN10 NetworkLoaderBlock");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10, Block1c.FirmwareDescriptorListHead) == 0x58, "LOADER_PARAMETER_EXTENSION_WIN10 FirmwareDescriptorListHead");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10, Block1c.AcpiTable) == 0x68, "LOADER_PARAMETER_EXTENSION_WIN10 AcpiTable");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10, Block1c.AcpiTableSize) == 0x70, "LOADER_PARAMETER_EXTENSION_WIN10 AcpiTableSize");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10, LoaderPerformanceData) == 0x78, "LOADER_PARAMETER_EXTENSION_WIN10 LoaderPerformanceData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10, Block2b.BootApplicationPersistentData) == 0x80, "LOADER_PARAMETER_EXTENSION_WIN10 BootApplicationPersistentData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10, Block2b.WmdTestResult) == 0x90, "LOADER_PARAMETER_EXTENSION_WIN10 WmdTestResult");
@@ -1281,6 +1293,7 @@ typedef struct {
 #endif
     LOADER_EXTENSION_BLOCK1A Block1a;
     LOADER_EXTENSION_BLOCK1B Block1b;
+    LOADER_EXTENSION_BLOCK1C Block1c;
     LOADER_EXTENSION_BLOCK2A Block2a;
     LOADER_PERFORMANCE_DATA* LoaderPerformanceData;
     LOADER_EXTENSION_BLOCK2B Block2b;
@@ -1331,10 +1344,10 @@ static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1607, Block1b.HeadlessLo
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1607, Block1b.SMBiosEPSHeader) == 0x24, "LOADER_PARAMETER_EXTENSION_WIN10_1607 SMBiosEPSHeader");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1607, Block1b.DrvDBImage) == 0x28, "LOADER_PARAMETER_EXTENSION_WIN10_1607 DrvDBImage");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1607, Block1b.DrvDBSize) == 0x2c, "LOADER_PARAMETER_EXTENSION_WIN10_1607 DrvDBSize");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1607, Block1b.NetworkLoaderBlock) == 0x30, "LOADER_PARAMETER_EXTENSION_WIN10_1607 NetworkLoaderBlock");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1607, Block1b.FirmwareDescriptorListHead) == 0x3c, "LOADER_PARAMETER_EXTENSION_WIN10_1607 FirmwareDescriptorListHead");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1607, Block1b.AcpiTable) == 0x44, "LOADER_PARAMETER_EXTENSION_WIN10_1607 AcpiTable");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1607, Block1b.AcpiTableSize) == 0x48, "LOADER_PARAMETER_EXTENSION_WIN10_1607 AcpiTableSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1607, Block1c.NetworkLoaderBlock) == 0x30, "LOADER_PARAMETER_EXTENSION_WIN10_1607 NetworkLoaderBlock");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1607, Block1c.FirmwareDescriptorListHead) == 0x3c, "LOADER_PARAMETER_EXTENSION_WIN10_1607 FirmwareDescriptorListHead");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1607, Block1c.AcpiTable) == 0x44, "LOADER_PARAMETER_EXTENSION_WIN10_1607 AcpiTable");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1607, Block1c.AcpiTableSize) == 0x48, "LOADER_PARAMETER_EXTENSION_WIN10_1607 AcpiTableSize");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1607, LoaderPerformanceData) == 0x50, "LOADER_PARAMETER_EXTENSION_WIN10_1607 LoaderPerformanceData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1607, Block2b.BootApplicationPersistentData) == 0x54, "LOADER_PARAMETER_EXTENSION_WIN10_1607 BootApplicationPersistentData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1607, Block2b.WmdTestResult) == 0x5c, "LOADER_PARAMETER_EXTENSION_WIN10_1607 WmdTestResult");
@@ -1394,10 +1407,10 @@ static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1607, Block1b.HeadlessLo
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1607, Block1b.SMBiosEPSHeader) == 0x38, "LOADER_PARAMETER_EXTENSION_WIN10_1607 SMBiosEPSHeader");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1607, Block1b.DrvDBImage) == 0x40, "LOADER_PARAMETER_EXTENSION_WIN10_1607 DrvDBImage");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1607, Block1b.DrvDBSize) == 0x48, "LOADER_PARAMETER_EXTENSION_WIN10_1607 DrvDBSize");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1607, Block1b.NetworkLoaderBlock) == 0x50, "LOADER_PARAMETER_EXTENSION_WIN10_1607 NetworkLoaderBlock");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1607, Block1b.FirmwareDescriptorListHead) == 0x58, "LOADER_PARAMETER_EXTENSION_WIN10_1607 FirmwareDescriptorListHead");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1607, Block1b.AcpiTable) == 0x68, "LOADER_PARAMETER_EXTENSION_WIN10_1607 AcpiTable");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1607, Block1b.AcpiTableSize) == 0x70, "LOADER_PARAMETER_EXTENSION_WIN10_1607 AcpiTableSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1607, Block1c.NetworkLoaderBlock) == 0x50, "LOADER_PARAMETER_EXTENSION_WIN10_1607 NetworkLoaderBlock");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1607, Block1c.FirmwareDescriptorListHead) == 0x58, "LOADER_PARAMETER_EXTENSION_WIN10_1607 FirmwareDescriptorListHead");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1607, Block1c.AcpiTable) == 0x68, "LOADER_PARAMETER_EXTENSION_WIN10_1607 AcpiTable");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1607, Block1c.AcpiTableSize) == 0x70, "LOADER_PARAMETER_EXTENSION_WIN10_1607 AcpiTableSize");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1607, LoaderPerformanceData) == 0x78, "LOADER_PARAMETER_EXTENSION_WIN10_1607 LoaderPerformanceData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1607, Block2b.BootApplicationPersistentData) == 0x80, "LOADER_PARAMETER_EXTENSION_WIN10_1607 BootApplicationPersistentData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1607, Block2b.WmdTestResult) == 0x90, "LOADER_PARAMETER_EXTENSION_WIN10_1607 WmdTestResult");
@@ -1478,6 +1491,7 @@ typedef struct {
 #endif
     LOADER_EXTENSION_BLOCK1A Block1a;
     LOADER_EXTENSION_BLOCK1B Block1b;
+    LOADER_EXTENSION_BLOCK1C Block1c;
     LOADER_EXTENSION_BLOCK2A Block2a;
     LOADER_PERFORMANCE_DATA* LoaderPerformanceData;
     LOADER_EXTENSION_BLOCK2B Block2b;
@@ -1533,10 +1547,10 @@ static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1703, Block1b.HeadlessLo
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1703, Block1b.SMBiosEPSHeader) == 0x24, "LOADER_PARAMETER_EXTENSION_WIN10_1703 SMBiosEPSHeader");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1703, Block1b.DrvDBImage) == 0x28, "LOADER_PARAMETER_EXTENSION_WIN10_1703 DrvDBImage");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1703, Block1b.DrvDBSize) == 0x2c, "LOADER_PARAMETER_EXTENSION_WIN10_1703 DrvDBSize");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1703, Block1b.NetworkLoaderBlock) == 0x30, "LOADER_PARAMETER_EXTENSION_WIN10_1703 NetworkLoaderBlock");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1703, Block1b.FirmwareDescriptorListHead) == 0x3c, "LOADER_PARAMETER_EXTENSION_WIN10_1703 FirmwareDescriptorListHead");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1703, Block1b.AcpiTable) == 0x44, "LOADER_PARAMETER_EXTENSION_WIN10_1703 AcpiTable");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1703, Block1b.AcpiTableSize) == 0x48, "LOADER_PARAMETER_EXTENSION_WIN10_1703 AcpiTableSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1703, Block1c.NetworkLoaderBlock) == 0x30, "LOADER_PARAMETER_EXTENSION_WIN10_1703 NetworkLoaderBlock");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1703, Block1c.FirmwareDescriptorListHead) == 0x3c, "LOADER_PARAMETER_EXTENSION_WIN10_1703 FirmwareDescriptorListHead");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1703, Block1c.AcpiTable) == 0x44, "LOADER_PARAMETER_EXTENSION_WIN10_1703 AcpiTable");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1703, Block1c.AcpiTableSize) == 0x48, "LOADER_PARAMETER_EXTENSION_WIN10_1703 AcpiTableSize");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1703, LoaderPerformanceData) == 0x50, "LOADER_PARAMETER_EXTENSION_WIN10_1703 LoaderPerformanceData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1703, Block2b.BootApplicationPersistentData) == 0x54, "LOADER_PARAMETER_EXTENSION_WIN10_1703 BootApplicationPersistentData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1703, Block2b.WmdTestResult) == 0x5c, "LOADER_PARAMETER_EXTENSION_WIN10_1703 WmdTestResult");
@@ -1600,10 +1614,10 @@ static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1703, Block1b.HeadlessLo
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1703, Block1b.SMBiosEPSHeader) == 0x38, "LOADER_PARAMETER_EXTENSION_WIN10_1703 SMBiosEPSHeader");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1703, Block1b.DrvDBImage) == 0x40, "LOADER_PARAMETER_EXTENSION_WIN10_1703 DrvDBImage");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1703, Block1b.DrvDBSize) == 0x48, "LOADER_PARAMETER_EXTENSION_WIN10_1703 DrvDBSize");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1703, Block1b.NetworkLoaderBlock) == 0x50, "LOADER_PARAMETER_EXTENSION_WIN10_1703 NetworkLoaderBlock");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1703, Block1b.FirmwareDescriptorListHead) == 0x58, "LOADER_PARAMETER_EXTENSION_WIN10_1703 FirmwareDescriptorListHead");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1703, Block1b.AcpiTable) == 0x68, "LOADER_PARAMETER_EXTENSION_WIN10_1703 AcpiTable");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1703, Block1b.AcpiTableSize) == 0x70, "LOADER_PARAMETER_EXTENSION_WIN10_1703 AcpiTableSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1703, Block1c.NetworkLoaderBlock) == 0x50, "LOADER_PARAMETER_EXTENSION_WIN10_1703 NetworkLoaderBlock");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1703, Block1c.FirmwareDescriptorListHead) == 0x58, "LOADER_PARAMETER_EXTENSION_WIN10_1703 FirmwareDescriptorListHead");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1703, Block1c.AcpiTable) == 0x68, "LOADER_PARAMETER_EXTENSION_WIN10_1703 AcpiTable");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1703, Block1c.AcpiTableSize) == 0x70, "LOADER_PARAMETER_EXTENSION_WIN10_1703 AcpiTableSize");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1703, LoaderPerformanceData) == 0x78, "LOADER_PARAMETER_EXTENSION_WIN10_1703 LoaderPerformanceData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1703, Block2b.BootApplicationPersistentData) == 0x80, "LOADER_PARAMETER_EXTENSION_WIN10_1703 BootApplicationPersistentData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1703, Block2b.WmdTestResult) == 0x90, "LOADER_PARAMETER_EXTENSION_WIN10_1703 WmdTestResult");
@@ -1709,6 +1723,7 @@ typedef struct {
 #endif
     LOADER_EXTENSION_BLOCK1A Block1a;
     LOADER_EXTENSION_BLOCK1B Block1b;
+    LOADER_EXTENSION_BLOCK1C Block1c;
     LOADER_EXTENSION_BLOCK2A Block2a;
     LOADER_PERFORMANCE_DATA_1809 LoaderPerformanceData;
     LOADER_EXTENSION_BLOCK2B Block2b;
@@ -1765,12 +1780,12 @@ static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1809, Block1b.HeadlessLo
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1809, Block1b.SMBiosEPSHeader) == 0x24, "LOADER_PARAMETER_EXTENSION_WIN10_1809 SMBiosEPSHeader");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1809, Block1b.DrvDBImage) == 0x28, "LOADER_PARAMETER_EXTENSION_WIN10_1809 DrvDBImage");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1809, Block1b.DrvDBSize) == 0x2c, "LOADER_PARAMETER_EXTENSION_WIN10_1809 DrvDBSize");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1809, Block1b.NetworkLoaderBlock) == 0x30, "LOADER_PARAMETER_EXTENSION_WIN10_1809 NetworkLoaderBlock");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1809, Block1b.HalpIRQLToTPR) == 0x34, "LOADER_PARAMETER_EXTENSION_WIN10_1809 HalpIRQLtoTPR");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1809, Block1b.HalpVectorToIRQL) == 0x38, "LOADER_PARAMETER_EXTENSION_WIN10_1809 HalpVectorToIRQL");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1809, Block1b.FirmwareDescriptorListHead) == 0x3c, "LOADER_PARAMETER_EXTENSION_WIN10_1809 FirmwareDescriptorListHead");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1809, Block1b.AcpiTable) == 0x44, "LOADER_PARAMETER_EXTENSION_WIN10_1809 AcpiTable");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1809, Block1b.AcpiTableSize) == 0x48, "LOADER_PARAMETER_EXTENSION_WIN10_1809 AcpiTableSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1809, Block1c.NetworkLoaderBlock) == 0x30, "LOADER_PARAMETER_EXTENSION_WIN10_1809 NetworkLoaderBlock");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1809, Block1c.HalpIRQLToTPR) == 0x34, "LOADER_PARAMETER_EXTENSION_WIN10_1809 HalpIRQLtoTPR");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1809, Block1c.HalpVectorToIRQL) == 0x38, "LOADER_PARAMETER_EXTENSION_WIN10_1809 HalpVectorToIRQL");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1809, Block1c.FirmwareDescriptorListHead) == 0x3c, "LOADER_PARAMETER_EXTENSION_WIN10_1809 FirmwareDescriptorListHead");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1809, Block1c.AcpiTable) == 0x44, "LOADER_PARAMETER_EXTENSION_WIN10_1809 AcpiTable");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1809, Block1c.AcpiTableSize) == 0x48, "LOADER_PARAMETER_EXTENSION_WIN10_1809 AcpiTableSize");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1809, LoaderPerformanceData) == 0x50, "LOADER_PARAMETER_EXTENSION_WIN10_1809 LoaderPerformanceData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1809, Block2b.BootApplicationPersistentData) == 0x98, "LOADER_PARAMETER_EXTENSION_WIN10_1809 BootApplicationPersistentData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1809, Block2b.WmdTestResult) == 0xa0, "LOADER_PARAMETER_EXTENSION_WIN10_1809 WmdTestResult");
@@ -1836,10 +1851,10 @@ static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1809, Block1b.HeadlessLo
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1809, Block1b.SMBiosEPSHeader) == 0x38, "LOADER_PARAMETER_EXTENSION_WIN10_1809 SMBiosEPSHeader");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1809, Block1b.DrvDBImage) == 0x40, "LOADER_PARAMETER_EXTENSION_WIN10_1809 DrvDBImage");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1809, Block1b.DrvDBSize) == 0x48, "LOADER_PARAMETER_EXTENSION_WIN10_1809 DrvDBSize");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1809, Block1b.NetworkLoaderBlock) == 0x50, "LOADER_PARAMETER_EXTENSION_WIN10_1809 NetworkLoaderBlock");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1809, Block1b.FirmwareDescriptorListHead) == 0x58, "LOADER_PARAMETER_EXTENSION_WIN10_1809 FirmwareDescriptorListHead");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1809, Block1b.AcpiTable) == 0x68, "LOADER_PARAMETER_EXTENSION_WIN10_1809 AcpiTable");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1809, Block1b.AcpiTableSize) == 0x70, "LOADER_PARAMETER_EXTENSION_WIN10_1809 AcpiTableSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1809, Block1c.NetworkLoaderBlock) == 0x50, "LOADER_PARAMETER_EXTENSION_WIN10_1809 NetworkLoaderBlock");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1809, Block1c.FirmwareDescriptorListHead) == 0x58, "LOADER_PARAMETER_EXTENSION_WIN10_1809 FirmwareDescriptorListHead");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1809, Block1c.AcpiTable) == 0x68, "LOADER_PARAMETER_EXTENSION_WIN10_1809 AcpiTable");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1809, Block1c.AcpiTableSize) == 0x70, "LOADER_PARAMETER_EXTENSION_WIN10_1809 AcpiTableSize");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1809, LoaderPerformanceData) == 0x78, "LOADER_PARAMETER_EXTENSION_WIN10_1809 LoaderPerformanceData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1809, Block2b.BootApplicationPersistentData) == 0xc0, "LOADER_PARAMETER_EXTENSION_WIN10_1809 BootApplicationPersistentData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1809, Block2b.WmdTestResult) == 0xd0, "LOADER_PARAMETER_EXTENSION_WIN10_1809 WmdTestResult");
@@ -1926,6 +1941,7 @@ typedef struct {
 #endif
     LOADER_EXTENSION_BLOCK1A Block1a;
     LOADER_EXTENSION_BLOCK1B Block1b;
+    LOADER_EXTENSION_BLOCK1C Block1c;
     LOADER_EXTENSION_BLOCK2A Block2a;
     LOADER_PERFORMANCE_DATA_1903 LoaderPerformanceData;
     LOADER_EXTENSION_BLOCK2B Block2b;
@@ -1989,12 +2005,12 @@ static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, Block1b.HeadlessLo
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, Block1b.SMBiosEPSHeader) == 0x24, "LOADER_PARAMETER_EXTENSION_WIN10_1903 SMBiosEPSHeader");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, Block1b.DrvDBImage) == 0x28, "LOADER_PARAMETER_EXTENSION_WIN10_1903 DrvDBImage");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, Block1b.DrvDBSize) == 0x2c, "LOADER_PARAMETER_EXTENSION_WIN10_1903 DrvDBSize");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, Block1b.NetworkLoaderBlock) == 0x30, "LOADER_PARAMETER_EXTENSION_WIN10_1903 NetworkLoaderBlock");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, Block1b.HalpIRQLToTPR) == 0x34, "LOADER_PARAMETER_EXTENSION_WIN10_1903 HalpIRQLtoTPR");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, Block1b.HalpVectorToIRQL) == 0x38, "LOADER_PARAMETER_EXTENSION_WIN10_1903 HalpVectorToIRQL");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, Block1b.FirmwareDescriptorListHead) == 0x3c, "LOADER_PARAMETER_EXTENSION_WIN10_1903 FirmwareDescriptorListHead");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, Block1b.AcpiTable) == 0x44, "LOADER_PARAMETER_EXTENSION_WIN10_1903 AcpiTable");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, Block1b.AcpiTableSize) == 0x48, "LOADER_PARAMETER_EXTENSION_WIN10_1903 AcpiTableSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, Block1c.NetworkLoaderBlock) == 0x30, "LOADER_PARAMETER_EXTENSION_WIN10_1903 NetworkLoaderBlock");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, Block1c.HalpIRQLToTPR) == 0x34, "LOADER_PARAMETER_EXTENSION_WIN10_1903 HalpIRQLtoTPR");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, Block1c.HalpVectorToIRQL) == 0x38, "LOADER_PARAMETER_EXTENSION_WIN10_1903 HalpVectorToIRQL");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, Block1c.FirmwareDescriptorListHead) == 0x3c, "LOADER_PARAMETER_EXTENSION_WIN10_1903 FirmwareDescriptorListHead");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, Block1c.AcpiTable) == 0x44, "LOADER_PARAMETER_EXTENSION_WIN10_1903 AcpiTable");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, Block1c.AcpiTableSize) == 0x48, "LOADER_PARAMETER_EXTENSION_WIN10_1903 AcpiTableSize");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, LoaderPerformanceData) == 0x50, "LOADER_PARAMETER_EXTENSION_WIN10_1903 LoaderPerformanceData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, Block2b.BootApplicationPersistentData) == 0xb0, "LOADER_PARAMETER_EXTENSION_WIN10_1903 BootApplicationPersistentData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, Block2b.WmdTestResult) == 0xb8, "LOADER_PARAMETER_EXTENSION_WIN10_1903 WmdTestResult");
@@ -2063,10 +2079,10 @@ static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, Block1b.HeadlessLo
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, Block1b.SMBiosEPSHeader) == 0x38, "LOADER_PARAMETER_EXTENSION_WIN10_1903 SMBiosEPSHeader");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, Block1b.DrvDBImage) == 0x40, "LOADER_PARAMETER_EXTENSION_WIN10_1903 DrvDBImage");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, Block1b.DrvDBSize) == 0x48, "LOADER_PARAMETER_EXTENSION_WIN10_1903 DrvDBSize");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, Block1b.NetworkLoaderBlock) == 0x50, "LOADER_PARAMETER_EXTENSION_WIN10_1903 NetworkLoaderBlock");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, Block1b.FirmwareDescriptorListHead) == 0x58, "LOADER_PARAMETER_EXTENSION_WIN10_1903 FirmwareDescriptorListHead");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, Block1b.AcpiTable) == 0x68, "LOADER_PARAMETER_EXTENSION_WIN10_1903 AcpiTable");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, Block1b.AcpiTableSize) == 0x70, "LOADER_PARAMETER_EXTENSION_WIN10_1903 AcpiTableSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, Block1c.NetworkLoaderBlock) == 0x50, "LOADER_PARAMETER_EXTENSION_WIN10_1903 NetworkLoaderBlock");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, Block1c.FirmwareDescriptorListHead) == 0x58, "LOADER_PARAMETER_EXTENSION_WIN10_1903 FirmwareDescriptorListHead");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, Block1c.AcpiTable) == 0x68, "LOADER_PARAMETER_EXTENSION_WIN10_1903 AcpiTable");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, Block1c.AcpiTableSize) == 0x70, "LOADER_PARAMETER_EXTENSION_WIN10_1903 AcpiTableSize");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, LoaderPerformanceData) == 0x78, "LOADER_PARAMETER_EXTENSION_WIN10_1903 LoaderPerformanceData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, Block2b.BootApplicationPersistentData) == 0xd8, "LOADER_PARAMETER_EXTENSION_WIN10_1903 BootApplicationPersistentData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, Block2b.WmdTestResult) == 0xe8, "LOADER_PARAMETER_EXTENSION_WIN10_1903 WmdTestResult");
@@ -2128,6 +2144,246 @@ static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, HotPatchReserveSiz
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, RetpolineReserveSize) == 0xd7c, "LOADER_PARAMETER_EXTENSION_WIN10_1903 RetpolineReserveSize");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, MiniExecutive) == 0xd80, "LOADER_PARAMETER_EXTENSION_WIN10_1903 MiniExecutive");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_1903, VsmPerformanceData) == 0xd90, "LOADER_PARAMETER_EXTENSION_WIN10_1903 VsmPerformanceData");
+#endif
+
+typedef struct {
+    uint32_t ProximityId;
+#ifdef __x86_64__
+    uint32_t padding;
+#endif
+    uint64_t BasePage;
+    uint64_t EndPage;
+} NUMA_MEMORY_RANGE;
+
+typedef struct {
+    uint32_t Size;
+    PROFILE_PARAMETER_BLOCK Profile;
+#ifdef __x86_64__
+    uint32_t padding1;
+#endif
+    LOADER_EXTENSION_BLOCK1A Block1a;
+    LOADER_EXTENSION_BLOCK1B Block1b;
+    void* DrvDBPatchImage;
+    uint32_t DrvDBPatchSize;
+#ifdef __x86_64__
+    uint32_t padding2;
+#endif
+    LOADER_EXTENSION_BLOCK1C Block1c;
+    LOADER_EXTENSION_BLOCK2A Block2a;
+    LOADER_PERFORMANCE_DATA_1903 LoaderPerformanceData;
+    LOADER_EXTENSION_BLOCK2B Block2b;
+    uintptr_t ResumePages;
+    void* DumpHeader;
+    LOADER_EXTENSION_BLOCK3 Block3;
+    BOOT_ENTROPY_LDR_RESULT_WIN1809 BootEntropyResult;
+    uint64_t ProcessorCounterFrequency;
+    LOADER_PARAMETER_HYPERVISOR_EXTENSION_1809 HypervisorExtension;
+    LOADER_EXTENSION_BLOCK4 Block4;
+    LOADER_EXTENSION_BLOCK5A Block5a;
+    LOADER_EXTENSION_BLOCK5B Block5b;
+    LOADER_EXTENSION_BLOCK6 Block6;
+    uint32_t IumEnablement;
+    uint32_t IumPolicy;
+    uint32_t IumStatus;
+    uint32_t BootId;
+    LOADER_PARAMETER_CI_EXTENSION* CodeIntegrityData;
+    uint32_t CodeIntegrityDataSize;
+    LOADER_HIVE_RECOVERY_INFO SystemHiveRecoveryInfo;
+    uint32_t SoftRestartCount;
+#ifdef __x86_64__
+    uint32_t padding3;
+#endif
+    int64_t SoftRestartTime;
+#ifdef __x86_64__
+    void* HypercallCodeVa;
+    void* HalVirtualAddress;
+    uint64_t HalNumberOfBytes;
+#endif
+    LEAP_SECOND_DATA* LeapSecondData;
+    uint32_t MajorRelease;
+    uint32_t Reserved1;
+    char NtBuildLab[0xe0];
+    char NtBuildLabEx[0xe0];
+#ifndef __x86_64__
+    uint32_t padding4;
+#endif
+    LOADER_RESET_REASON ResetReason;
+    uint32_t MaxPciBusNumber;
+    uint32_t FeatureSettings;
+    uint32_t HotPatchReserveSize;
+    uint32_t RetpolineReserveSize;
+#ifdef __x86_64__
+    struct {
+        void* CodeBase;
+        uint32_t CodeSize;
+    } MiniExecutive;
+#endif
+    VSM_PERFORMANCE_DATA VsmPerformanceData;
+    NUMA_MEMORY_RANGE* NumaMemoryRanges;
+    uint32_t NumaMemoryRangeCount;
+    uint32_t IommuFaultPolicy;
+} LOADER_PARAMETER_EXTENSION_WIN10_2004;
+
+#ifdef _X86_
+static_assert(sizeof(LOADER_PARAMETER_EXTENSION_WIN10_2004) == 0xd00, "LOADER_PARAMETER_EXTENSION_WIN10_2004 has incorrect size.");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Size) == 0x0, "LOADER_PARAMETER_EXTENSION_WIN10_2004 Size");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Profile) == 0x4, "LOADER_PARAMETER_EXTENSION_WIN10_2004 Profile");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block1a.EmInfFileImage) == 0x14, "LOADER_PARAMETER_EXTENSION_WIN10_2004 EmInfFileImage");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block1a.EmInfFileSize) == 0x18, "LOADER_PARAMETER_EXTENSION_WIN10_2004 EmInfFileSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block1a.TriageDumpBlock) == 0x1c, "LOADER_PARAMETER_EXTENSION_WIN10_2004 TriageDumpBlock");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block1b.HeadlessLoaderBlock) == 0x20, "LOADER_PARAMETER_EXTENSION_WIN10_2004 HeadlessLoaderBlock");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block1b.SMBiosEPSHeader) == 0x24, "LOADER_PARAMETER_EXTENSION_WIN10_2004 SMBiosEPSHeader");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block1b.DrvDBImage) == 0x28, "LOADER_PARAMETER_EXTENSION_WIN10_2004 DrvDBImage");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block1b.DrvDBSize) == 0x2c, "LOADER_PARAMETER_EXTENSION_WIN10_2004 DrvDBSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, DrvDBPatchImage) == 0x30, "LOADER_PARAMETER_EXTENSION_WIN10_2004 DrvDBPatchImage");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, DrvDBPatchSize) == 0x34, "LOADER_PARAMETER_EXTENSION_WIN10_2004 DrvDBPatchSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block1c.NetworkLoaderBlock) == 0x38, "LOADER_PARAMETER_EXTENSION_WIN10_2004 NetworkLoaderBlock");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block1c.HalpIRQLToTPR) == 0x3c, "LOADER_PARAMETER_EXTENSION_WIN10_2004 HalpIRQLtoTPR");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block1c.HalpVectorToIRQL) == 0x40, "LOADER_PARAMETER_EXTENSION_WIN10_2004 HalpVectorToIRQL");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block1c.FirmwareDescriptorListHead) == 0x44, "LOADER_PARAMETER_EXTENSION_WIN10_2004 FirmwareDescriptorListHead");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block1c.AcpiTable) == 0x4c, "LOADER_PARAMETER_EXTENSION_WIN10_2004 AcpiTable");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block1c.AcpiTableSize) == 0x50, "LOADER_PARAMETER_EXTENSION_WIN10_2004 AcpiTableSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, LoaderPerformanceData) == 0x58, "LOADER_PARAMETER_EXTENSION_WIN10_2004 LoaderPerformanceData");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block2b.BootApplicationPersistentData) == 0xb8, "LOADER_PARAMETER_EXTENSION_WIN10_2004 BootApplicationPersistentData");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block2b.WmdTestResult) == 0xc0, "LOADER_PARAMETER_EXTENSION_WIN10_2004 WmdTestResult");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block2b.BootIdentifier) == 0xc4, "LOADER_PARAMETER_EXTENSION_WIN10_2004 BootIdentifier");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, ResumePages) == 0xd4, "LOADER_PARAMETER_EXTENSION_WIN10_2004 ResumePages");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, DumpHeader) == 0xd8, "LOADER_PARAMETER_EXTENSION_WIN10_2004 DumpHeader");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block3.BgContext) == 0xdc, "LOADER_PARAMETER_EXTENSION_WIN10_2004 BgContext");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block3.NumaLocalityInfo) == 0xe0, "LOADER_PARAMETER_EXTENSION_WIN10_2004 NumaLocalityInfo");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block3.NumaGroupAssignment) == 0xe4, "LOADER_PARAMETER_EXTENSION_WIN10_2004 NumaGroupAssignment");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block3.AttachedHives) == 0xe8, "LOADER_PARAMETER_EXTENSION_WIN10_2004 AttachedHives");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block3.MemoryCachingRequirementsCount) == 0xf0, "LOADER_PARAMETER_EXTENSION_WIN10_2004 MemoryCachingRequirementsCount");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block3.MemoryCachingRequirements) == 0xf4, "LOADER_PARAMETER_EXTENSION_WIN10_2004 MemoryCachingRequirements");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, BootEntropyResult) == 0xf8, "LOADER_PARAMETER_EXTENSION_WIN10_2004 BootEntropyResult");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, ProcessorCounterFrequency) == 0x960, "LOADER_PARAMETER_EXTENSION_WIN10_2004 ProcessorCounterFrequency");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, HypervisorExtension) == 0x968, "LOADER_PARAMETER_EXTENSION_WIN10_2004 HypervisorExtension");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block4.HardwareConfigurationId) == 0x9a8, "LOADER_PARAMETER_EXTENSION_WIN10_2004 HardwareConfigurationId");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block4.HalExtensionModuleList) == 0x9b8, "LOADER_PARAMETER_EXTENSION_WIN10_2004 HalExtensionModuleList");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block4.SystemTime) == 0x9c0, "LOADER_PARAMETER_EXTENSION_WIN10_2004 SystemTime");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block4.TimeStampAtSystemTimeRead) == 0x9c8, "LOADER_PARAMETER_EXTENSION_WIN10_2004 TimeStampAtSystemTimeRead");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block4.BootFlags) == 0x9d0, "LOADER_PARAMETER_EXTENSION_WIN10_2004 BootFlags");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block4.InternalBootFlags) == 0x9d8, "LOADER_PARAMETER_EXTENSION_WIN10_2004 InternalBootFlags");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block4.WfsFPData) == 0x9e0, "LOADER_PARAMETER_EXTENSION_WIN10_2004 WfsFPData");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block4.WfsFPDataSize) == 0x9e4, "LOADER_PARAMETER_EXTENSION_WIN10_2004 WfsFPDataSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block5a.BugcheckParameters) == 0x9e8, "LOADER_PARAMETER_EXTENSION_WIN10_2004 BugcheckParameters");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block5a.ApiSetSchema) == 0x9fc, "LOADER_PARAMETER_EXTENSION_WIN10_2004 ApiSetSchema");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block5a.ApiSetSchemaSize) == 0xa00, "LOADER_PARAMETER_EXTENSION_WIN10_2004 ApiSetSchemaSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block5a.ApiSetSchemaExtensions) == 0xa04, "LOADER_PARAMETER_EXTENSION_WIN10_2004 ApiSetSchemaExtensions");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block5b.AcpiBiosVersion) == 0xa0c, "LOADER_PARAMETER_EXTENSION_WIN10_2004 AcpiBiosVersion");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block5b.SmbiosVersion) == 0xa14, "LOADER_PARAMETER_EXTENSION_WIN10_2004 SmbiosVersion");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block5b.EfiVersion) == 0xa1c, "LOADER_PARAMETER_EXTENSION_WIN10_2004 EfiVersion");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block6.KdDebugDevice) == 0xa24, "LOADER_PARAMETER_EXTENSION_WIN10_2004 KdDebugDevice");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block6.OfflineCrashdumpConfigurationTable) == 0xa28, "LOADER_PARAMETER_EXTENSION_WIN10_2004 OfflineCrashdumpConfigurationTable");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block6.ManufacturingProfile) == 0xa48, "LOADER_PARAMETER_EXTENSION_WIN10_2004 ManufacturingProfile");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block6.BbtBuffer) == 0xa50, "LOADER_PARAMETER_EXTENSION_WIN10_2004 BbtBuffer");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block6.XsaveAllowedFeatures) == 0xa58, "LOADER_PARAMETER_EXTENSION_WIN10_2004 XsaveAllowedFeatures");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block6.XsaveFlags) == 0xa60, "LOADER_PARAMETER_EXTENSION_WIN10_2004 XsaveFlags");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block6.BootOptions) == 0xa64, "LOADER_PARAMETER_EXTENSION_WIN10_2004 BootOptions");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, IumEnablement) == 0xa68, "LOADER_PARAMETER_EXTENSION_WIN10_2004 IumEnablement");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, IumPolicy) == 0xa6c, "LOADER_PARAMETER_EXTENSION_WIN10_2004 IumPolicy");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, IumStatus) == 0xa70, "LOADER_PARAMETER_EXTENSION_WIN10_2004 IumStatus");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, BootId) == 0xa74, "LOADER_PARAMETER_EXTENSION_WIN10_2004 BootId");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, CodeIntegrityData) == 0xa78, "LOADER_PARAMETER_EXTENSION_WIN10_2004 CodeIntegrityData");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, CodeIntegrityDataSize) == 0xa7c, "LOADER_PARAMETER_EXTENSION_WIN10_2004 CodeIntegrityDataSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, SystemHiveRecoveryInfo) == 0xa80, "LOADER_PARAMETER_EXTENSION_WIN10_2004 SystemHiveRecoveryInfo");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, SoftRestartCount) == 0xa94, "LOADER_PARAMETER_EXTENSION_WIN10_2004 SoftRestartCount");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, SoftRestartTime) == 0xa98, "LOADER_PARAMETER_EXTENSION_WIN10_2004 SoftRestartTime");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, LeapSecondData) == 0xaa0, "LOADER_PARAMETER_EXTENSION_WIN10_2004 LeapSecondData");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, MajorRelease) == 0xaa4, "LOADER_PARAMETER_EXTENSION_WIN10_2004 MajorRelease");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Reserved1) == 0xaa8, "LOADER_PARAMETER_EXTENSION_WIN10_2004 Reserved1");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, NtBuildLab) == 0xaac, "LOADER_PARAMETER_EXTENSION_WIN10_2004 NtBuildLab");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, NtBuildLabEx) == 0xb8c, "LOADER_PARAMETER_EXTENSION_WIN10_2004 NtBuildLabEx");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, ResetReason) == 0xc70, "LOADER_PARAMETER_EXTENSION_WIN10_2004 ResetReason");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, MaxPciBusNumber) == 0xca0, "LOADER_PARAMETER_EXTENSION_WIN10_2004 MaxPciBusNumber");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, FeatureSettings) == 0xca4, "LOADER_PARAMETER_EXTENSION_WIN10_2004 FeatureSettings");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, HotPatchReserveSize) == 0xca8, "LOADER_PARAMETER_EXTENSION_WIN10_2004 HotPatchReserveSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, RetpolineReserveSize) == 0xcac, "LOADER_PARAMETER_EXTENSION_WIN10_2004 RetpolineReserveSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, VsmPerformanceData) == 0xcb0, "LOADER_PARAMETER_EXTENSION_WIN10_2004 VsmPerformanceData");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, NumaMemoryRanges) == 0xcf0, "LOADER_PARAMETER_EXTENSION_WIN10_2004 NumaMemoryRanges");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, NumaMemoryRangeCount) == 0xcf4, "LOADER_PARAMETER_EXTENSION_WIN10_2004 NumaMemoryRangeCount");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, IommuFaultPolicy) == 0xcf8, "LOADER_PARAMETER_EXTENSION_WIN10_2004 IommuFaultPolicy");
+#elif defined(__x86_64__)
+static_assert(sizeof(LOADER_PARAMETER_EXTENSION_WIN10_2004) == 0xdf0, "LOADER_PARAMETER_EXTENSION_WIN10_2004 has incorrect size.");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Size) == 0x0, "LOADER_PARAMETER_EXTENSION_WIN10_2004 Size");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Profile) == 0x4, "LOADER_PARAMETER_EXTENSION_WIN10_2004 Profile");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block1a.EmInfFileImage) == 0x18, "LOADER_PARAMETER_EXTENSION_WIN10_2004 EmInfFileImage");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block1a.EmInfFileSize) == 0x20, "LOADER_PARAMETER_EXTENSION_WIN10_2004 EmInfFileSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block1a.TriageDumpBlock) == 0x28, "LOADER_PARAMETER_EXTENSION_WIN10_2004 TriageDumpBlock");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block1b.HeadlessLoaderBlock) == 0x30, "LOADER_PARAMETER_EXTENSION_WIN10_2004 HeadlessLoaderBlock");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block1b.SMBiosEPSHeader) == 0x38, "LOADER_PARAMETER_EXTENSION_WIN10_2004 SMBiosEPSHeader");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block1b.DrvDBImage) == 0x40, "LOADER_PARAMETER_EXTENSION_WIN10_2004 DrvDBImage");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block1b.DrvDBSize) == 0x48, "LOADER_PARAMETER_EXTENSION_WIN10_2004 DrvDBSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, DrvDBPatchImage) == 0x50, "LOADER_PARAMETER_EXTENSION_WIN10_2004 DrvDBPatchImage");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, DrvDBPatchSize) == 0x58, "LOADER_PARAMETER_EXTENSION_WIN10_2004 DrvDBPatchSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block1c.NetworkLoaderBlock) == 0x60, "LOADER_PARAMETER_EXTENSION_WIN10_2004 NetworkLoaderBlock");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block1c.FirmwareDescriptorListHead) == 0x68, "LOADER_PARAMETER_EXTENSION_WIN10_2004 FirmwareDescriptorListHead");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block1c.AcpiTable) == 0x78, "LOADER_PARAMETER_EXTENSION_WIN10_2004 AcpiTable");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block1c.AcpiTableSize) == 0x80, "LOADER_PARAMETER_EXTENSION_WIN10_2004 AcpiTableSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, LoaderPerformanceData) == 0x88, "LOADER_PARAMETER_EXTENSION_WIN10_2004 LoaderPerformanceData");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block2b.BootApplicationPersistentData) == 0xe8, "LOADER_PARAMETER_EXTENSION_WIN10_2004 BootApplicationPersistentData");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block2b.WmdTestResult) == 0xf8, "LOADER_PARAMETER_EXTENSION_WIN10_2004 WmdTestResult");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block2b.BootIdentifier) == 0x100, "LOADER_PARAMETER_EXTENSION_WIN10_2004 BootIdentifier");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, ResumePages) == 0x110, "LOADER_PARAMETER_EXTENSION_WIN10_2004 ResumePages");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, DumpHeader) == 0x118, "LOADER_PARAMETER_EXTENSION_WIN10_2004 DumpHeader");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block3.BgContext) == 0x120, "LOADER_PARAMETER_EXTENSION_WIN10_2004 BgContext");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block3.NumaLocalityInfo) == 0x128, "LOADER_PARAMETER_EXTENSION_WIN10_2004 NumaLocalityInfo");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block3.NumaGroupAssignment) == 0x130, "LOADER_PARAMETER_EXTENSION_WIN10_2004 NumaGroupAssignment");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block3.AttachedHives) == 0x138, "LOADER_PARAMETER_EXTENSION_WIN10_2004 AttachedHives");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block3.MemoryCachingRequirementsCount) == 0x148, "LOADER_PARAMETER_EXTENSION_WIN10_2004 MemoryCachingRequirementsCount");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block3.MemoryCachingRequirements) == 0x150, "LOADER_PARAMETER_EXTENSION_WIN10_2004 MemoryCachingRequirements");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, BootEntropyResult) == 0x158, "LOADER_PARAMETER_EXTENSION_WIN10_2004 BootEntropyResult");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, ProcessorCounterFrequency) == 0x9c0, "LOADER_PARAMETER_EXTENSION_WIN10_2004 ProcessorCounterFrequency");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, HypervisorExtension) == 0x9c8, "LOADER_PARAMETER_EXTENSION_WIN10_2004 HypervisorExtension");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block4.HardwareConfigurationId) == 0xa08, "LOADER_PARAMETER_EXTENSION_WIN10_2004 HardwareConfigurationId");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block4.HalExtensionModuleList) == 0xa18, "LOADER_PARAMETER_EXTENSION_WIN10_2004 HalExtensionModuleList");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block4.SystemTime) == 0xa28, "LOADER_PARAMETER_EXTENSION_WIN10_2004 SystemTime");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block4.TimeStampAtSystemTimeRead) == 0xa30, "LOADER_PARAMETER_EXTENSION_WIN10_2004 TimeStampAtSystemTimeRead");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block4.BootFlags) == 0xa38, "LOADER_PARAMETER_EXTENSION_WIN10_2004 BootFlags");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block4.InternalBootFlags) == 0xa40, "LOADER_PARAMETER_EXTENSION_WIN10_2004 InternalBootFlags");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block4.WfsFPData) == 0xa48, "LOADER_PARAMETER_EXTENSION_WIN10_2004 WfsFPData");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block4.WfsFPDataSize) == 0xa50, "LOADER_PARAMETER_EXTENSION_WIN10_2004 WfsFPDataSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block5a.BugcheckParameters) == 0xa58, "LOADER_PARAMETER_EXTENSION_WIN10_2004 BugcheckParameters");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block5a.ApiSetSchema) == 0xa80, "LOADER_PARAMETER_EXTENSION_WIN10_2004 ApiSetSchema");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block5a.ApiSetSchemaSize) == 0xa88, "LOADER_PARAMETER_EXTENSION_WIN10_2004 ApiSetSchemaSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block5a.ApiSetSchemaExtensions) == 0xa90, "LOADER_PARAMETER_EXTENSION_WIN10_2004 ApiSetSchemaExtensions");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block5b.AcpiBiosVersion) == 0xaa0, "LOADER_PARAMETER_EXTENSION_WIN10_2004 AcpiBiosVersion");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block5b.SmbiosVersion) == 0xab0, "LOADER_PARAMETER_EXTENSION_WIN10_2004 SmbiosVersion");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block5b.EfiVersion) == 0xac0, "LOADER_PARAMETER_EXTENSION_WIN10_2004 EfiVersion");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block6.KdDebugDevice) == 0xad0, "LOADER_PARAMETER_EXTENSION_WIN10_2004 KdDebugDevice");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block6.OfflineCrashdumpConfigurationTable) == 0xad8, "LOADER_PARAMETER_EXTENSION_WIN10_2004 OfflineCrashdumpConfigurationTable");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block6.ManufacturingProfile) == 0xaf8, "LOADER_PARAMETER_EXTENSION_WIN10_2004 ManufacturingProfile");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block6.BbtBuffer) == 0xb08, "LOADER_PARAMETER_EXTENSION_WIN10_2004 BbtBuffer");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block6.XsaveAllowedFeatures) == 0xb10, "LOADER_PARAMETER_EXTENSION_WIN10_2004 XsaveAllowedFeatures");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block6.XsaveFlags) == 0xb18, "LOADER_PARAMETER_EXTENSION_WIN10_2004 XsaveFlags");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Block6.BootOptions) == 0xb20, "LOADER_PARAMETER_EXTENSION_WIN10_2004 BootOptions");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, IumEnablement) == 0xb28, "LOADER_PARAMETER_EXTENSION_WIN10_2004 IumEnablement");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, IumPolicy) == 0xb2c, "LOADER_PARAMETER_EXTENSION_WIN10_2004 IumPolicy");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, IumStatus) == 0xb30, "LOADER_PARAMETER_EXTENSION_WIN10_2004 IumStatus");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, BootId) == 0xb34, "LOADER_PARAMETER_EXTENSION_WIN10_2004 BootId");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, CodeIntegrityData) == 0xb38, "LOADER_PARAMETER_EXTENSION_WIN10_2004 CodeIntegrityData");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, CodeIntegrityDataSize) == 0xb40, "LOADER_PARAMETER_EXTENSION_WIN10_2004 CodeIntegrityDataSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, SystemHiveRecoveryInfo) == 0xb44, "LOADER_PARAMETER_EXTENSION_WIN10_2004 SystemHiveRecoveryInfo");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, SoftRestartCount) == 0xb58, "LOADER_PARAMETER_EXTENSION_WIN10_2004 SoftRestartCount");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, SoftRestartTime) == 0xb60, "LOADER_PARAMETER_EXTENSION_WIN10_2004 SoftRestartTime");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, HypercallCodeVa) == 0xb68, "LOADER_PARAMETER_EXTENSION_WIN10_2004 HypercallCodeVa");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, HalVirtualAddress) == 0xb70, "LOADER_PARAMETER_EXTENSION_WIN10_2004 HalVirtualAddress");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, HalNumberOfBytes) == 0xb78, "LOADER_PARAMETER_EXTENSION_WIN10_2004 HalNumberOfBytes");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, LeapSecondData) == 0xb80, "LOADER_PARAMETER_EXTENSION_WIN10_2004 LeapSecondData");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, MajorRelease) == 0xb88, "LOADER_PARAMETER_EXTENSION_WIN10_2004 MajorRelease");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, Reserved1) == 0xb8c, "LOADER_PARAMETER_EXTENSION_WIN10_2004 Reserved1");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, NtBuildLab) == 0xb90, "LOADER_PARAMETER_EXTENSION_WIN10_2004 NtBuildLab");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, NtBuildLabEx) == 0xc70, "LOADER_PARAMETER_EXTENSION_WIN10_2004 NtBuildLabEx");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, ResetReason) == 0xd50, "LOADER_PARAMETER_EXTENSION_WIN10_2004 ResetReason");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, MaxPciBusNumber) == 0xd80, "LOADER_PARAMETER_EXTENSION_WIN10_2004 MaxPciBusNumber");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, FeatureSettings) == 0xd84, "LOADER_PARAMETER_EXTENSION_WIN10_2004 FeatureSettings");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, HotPatchReserveSize) == 0xd88, "LOADER_PARAMETER_EXTENSION_WIN10_2004 HotPatchReserveSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, RetpolineReserveSize) == 0xd8c, "LOADER_PARAMETER_EXTENSION_WIN10_2004 RetpolineReserveSize");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, MiniExecutive) == 0xd90, "LOADER_PARAMETER_EXTENSION_WIN10_2004 MiniExecutive");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, VsmPerformanceData) == 0xda0, "LOADER_PARAMETER_EXTENSION_WIN10_2004 VsmPerformanceData");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, NumaMemoryRanges) == 0xde0, "LOADER_PARAMETER_EXTENSION_WIN10_2004 NumaMemoryRanges");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, NumaMemoryRangeCount) == 0xde8, "LOADER_PARAMETER_EXTENSION_WIN10_2004 NumaMemoryRangeCount");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN10_2004, IommuFaultPolicy) == 0xdec, "LOADER_PARAMETER_EXTENSION_WIN10_2004 IommuFaultPolicy");
 #endif
 
 typedef struct {
@@ -3078,21 +3334,443 @@ typedef struct _KPCR {
 static_assert(offsetof(KPCR, PrcbData) == 0x180, "KPCR PrcbData has incorrect offset.");
 #endif
 
-#if 0
-// This is guesswork - this appears to be completely undocumented. When using EFI graphics, the bootloader
-// passes this structure in the extension as BgContext. The kernel stores from Unknown2 onwards as
-// nt!BgInternal.
+/* See BOOT_GRAPHICS_CONTEXT below. The kernel stores a copy of this as nt!BgInternal,
+ * hence the name. */
+
 typedef struct {
-    uint8_t Unknown1[0x20];
-    uint32_t Unknown2;
-    uint32_t Height;
-    uint32_t Width;
-    uint32_t PixelsPerScanLine;
-    uint32_t PixelFormat; // 5 = 32 bits, 4 = 24 bits
-    uint32_t Unknown3;
-    uint32_t Unknown4;
-    uint32_t Unknown5;
-    void* FrameBuffer;
-    // ... more?
-} BOOT_GRAPHICS_CONTEXT;
+    uint8_t unk1; // 01
+    uint8_t unk2; // 01
+    uint8_t unk3; // 00
+    uint8_t unk4; // f4
+    uint32_t height;
+    uint32_t width;
+    uint32_t pixels_per_scan_line; // ?
+    uint32_t format; // ?
+#ifdef __x86_64__
+    uint32_t bits_per_pixel; // ?
+#endif
+    void* unk5;
+    void* framebuffer;
+} bg_internal;
+
+#ifdef _X86_
+static_assert(sizeof(bg_internal) == 0x1c, "bg_internal has incorrect size.");
+#elif defined(__x86_64__)
+static_assert(sizeof(bg_internal) == 0x28, "bg_internal has incorrect size.");
+#endif
+
+/* As far as I can tell, the BOOT_GRAPHICS_CONTEXT structures are *completely* undocumented -
+ * nothing on Microsoft's website, nor in the PDB files of any version ntoskrnl or winload. */
+
+typedef struct {
+    void* unk1;
+    void* unk2;
+    void* unk3;
+    void* unk4;
+    bg_internal internal;
+    void* system_font;
+    uint32_t system_font_size;
+    uint32_t unk5;
+    void* console_font;
+    uint32_t console_font_size;
+    uint8_t boot_identifier[16];
+    uint32_t version;
+    uint32_t unk6;
+    uint32_t unk7;
+    void* mui;
+    uint32_t mui_size;
+#ifdef __x86_64__
+    uint32_t padding1;
+#endif
+    void* logo_bitmap;
+    void* unk8;
+    uint32_t logo_bitmap_size;
+    uint32_t unk9;
+    uint32_t unk10;
+    uint32_t logo_bitmap_width;
+    uint32_t logo_bitmap_height;
+    uint32_t unk11;
+} bgblock1;
+
+typedef struct {
+    void* unk19;
+    void* reserve_pool;
+    uint32_t reserve_pool_size;
+#ifdef __x86_64__
+    uint32_t padding2;
+#endif
+    void* string_resources;
+    void* progress_resources;
+} bgblock2;
+
+typedef struct {
+    bgblock1 block1;
+#ifdef _X86_
+    uint32_t unk1;
+    uint32_t unk2;
+#endif
+    bgblock2 block2;
+} BOOT_GRAPHICS_CONTEXT_V1;
+
+#ifdef _X86_
+static_assert(sizeof(BOOT_GRAPHICS_CONTEXT_V1) == 0xa0, "BOOT_GRAPHICS_CONTEXT_V1 has incorrect size.");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.unk1) == 0x0, "BOOT_GRAPHICS_CONTEXT_V1 unk1");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.unk2) == 0x4, "BOOT_GRAPHICS_CONTEXT_V1 unk2");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.unk3) == 0x8, "BOOT_GRAPHICS_CONTEXT_V1 unk3");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.unk4) == 0xc, "BOOT_GRAPHICS_CONTEXT_V1 unk4");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.internal) == 0x10, "BOOT_GRAPHICS_CONTEXT_V1 internal");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.system_font) == 0x2c, "BOOT_GRAPHICS_CONTEXT_V1 system_font");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.system_font_size) == 0x30, "BOOT_GRAPHICS_CONTEXT_V1 system_font_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.unk5) == 0x34, "BOOT_GRAPHICS_CONTEXT_V1 unk5");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.console_font) == 0x38, "BOOT_GRAPHICS_CONTEXT_V1 console_font");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.console_font_size) == 0x3c, "BOOT_GRAPHICS_CONTEXT_V1 console_font_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.boot_identifier) == 0x40, "BOOT_GRAPHICS_CONTEXT_V1 boot_identifier");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.version) == 0x50, "BOOT_GRAPHICS_CONTEXT_V1 version");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.unk6) == 0x54, "BOOT_GRAPHICS_CONTEXT_V1 unk6");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.unk7) == 0x58, "BOOT_GRAPHICS_CONTEXT_V1 unk7");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.mui) == 0x5c, "BOOT_GRAPHICS_CONTEXT_V1 mui");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.mui_size) == 0x60, "BOOT_GRAPHICS_CONTEXT_V1 mui_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.logo_bitmap) == 0x64, "BOOT_GRAPHICS_CONTEXT_V1 logo_bitmap");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.unk8) == 0x68, "BOOT_GRAPHICS_CONTEXT_V1 unk8");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.logo_bitmap_size) == 0x6c, "BOOT_GRAPHICS_CONTEXT_V1 logo_bitmap_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.unk9) == 0x70, "BOOT_GRAPHICS_CONTEXT_V1 unk9");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.unk10) == 0x74, "BOOT_GRAPHICS_CONTEXT_V1 unk10");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.logo_bitmap_width) == 0x78, "BOOT_GRAPHICS_CONTEXT_V1 logo_bitmap_width");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.logo_bitmap_height) == 0x7c, "BOOT_GRAPHICS_CONTEXT_V1 logo_bitmap_height");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.unk11) == 0x80, "BOOT_GRAPHICS_CONTEXT_V1 unk11");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block2.unk19) == 0x8c, "BOOT_GRAPHICS_CONTEXT_V1 unk19");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block2.reserve_pool) == 0x90, "BOOT_GRAPHICS_CONTEXT_V1 reserve_pool");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block2.reserve_pool_size) == 0x94, "BOOT_GRAPHICS_CONTEXT_V1 reserve_pool_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block2.string_resources) == 0x98, "BOOT_GRAPHICS_CONTEXT_V1 string_resources");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block2.progress_resources) == 0x9c, "BOOT_GRAPHICS_CONTEXT_V1 progress_resources");
+#elif defined(__x86_64__)
+static_assert(sizeof(BOOT_GRAPHICS_CONTEXT_V1) == 0xe0, "BOOT_GRAPHICS_CONTEXT_V1 has incorrect size.");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.unk1) == 0x0, "BOOT_GRAPHICS_CONTEXT_V1 unk1");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.unk2) == 0x8, "BOOT_GRAPHICS_CONTEXT_V1 unk2");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.unk3) == 0x10, "BOOT_GRAPHICS_CONTEXT_V1 unk3");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.unk4) == 0x18, "BOOT_GRAPHICS_CONTEXT_V1 unk4");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.internal) == 0x20, "BOOT_GRAPHICS_CONTEXT_V1 internal");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.system_font) == 0x48, "BOOT_GRAPHICS_CONTEXT_V1 system_font");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.system_font_size) == 0x50, "BOOT_GRAPHICS_CONTEXT_V1 system_font_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.unk5) == 0x54, "BOOT_GRAPHICS_CONTEXT_V1 unk5");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.console_font) == 0x58, "BOOT_GRAPHICS_CONTEXT_V1 console_font");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.console_font_size) == 0x60, "BOOT_GRAPHICS_CONTEXT_V1 console_font_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.boot_identifier) == 0x64, "BOOT_GRAPHICS_CONTEXT_V1 boot_identifier");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.version) == 0x74, "BOOT_GRAPHICS_CONTEXT_V1 version");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.unk6) == 0x78, "BOOT_GRAPHICS_CONTEXT_V1 unk6");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.unk7) == 0x7c, "BOOT_GRAPHICS_CONTEXT_V1 unk7");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.mui) == 0x80, "BOOT_GRAPHICS_CONTEXT_V1 mui");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.mui_size) == 0x88, "BOOT_GRAPHICS_CONTEXT_V1 mui_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.logo_bitmap) == 0x90, "BOOT_GRAPHICS_CONTEXT_V1 logo_bitmap");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.unk8) == 0x98, "BOOT_GRAPHICS_CONTEXT_V1 unk8");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.logo_bitmap_size) == 0xa0, "BOOT_GRAPHICS_CONTEXT_V1 logo_bitmap_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.unk9) == 0xa4, "BOOT_GRAPHICS_CONTEXT_V1 unk9");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.unk10) == 0xa8, "BOOT_GRAPHICS_CONTEXT_V1 unk10");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.logo_bitmap_width) == 0xac, "BOOT_GRAPHICS_CONTEXT_V1 logo_bitmap_width");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.logo_bitmap_height) == 0xb0, "BOOT_GRAPHICS_CONTEXT_V1 logo_bitmap_height");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block1.unk11) == 0xb4, "BOOT_GRAPHICS_CONTEXT_V1 unk11");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block2.unk19) == 0xb8, "BOOT_GRAPHICS_CONTEXT_V1 unk19");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block2.reserve_pool) == 0xc0, "BOOT_GRAPHICS_CONTEXT_V1 reserve_pool");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block2.reserve_pool_size) == 0xc8, "BOOT_GRAPHICS_CONTEXT_V1 reserve_pool_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block2.string_resources) == 0xd0, "BOOT_GRAPHICS_CONTEXT_V1 string_resources");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V1, block2.progress_resources) == 0xd8, "BOOT_GRAPHICS_CONTEXT_V1 progress_resources");
+#endif
+
+typedef struct {
+    bgblock1 block1;
+#ifdef _X86_
+    uint32_t unk1;
+    uint32_t unk2;
+#endif
+    bgblock2 block2;
+    uint8_t edid[128];
+} BOOT_GRAPHICS_CONTEXT_V2;
+
+#ifdef _X86_
+static_assert(sizeof(BOOT_GRAPHICS_CONTEXT_V2) == 0x120, "BOOT_GRAPHICS_CONTEXT_V2 has incorrect size.");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.unk1) == 0x0, "BOOT_GRAPHICS_CONTEXT_V2 unk1");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.unk2) == 0x4, "BOOT_GRAPHICS_CONTEXT_V2 unk2");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.unk3) == 0x8, "BOOT_GRAPHICS_CONTEXT_V2 unk3");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.unk4) == 0xc, "BOOT_GRAPHICS_CONTEXT_V2 unk4");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.internal) == 0x10, "BOOT_GRAPHICS_CONTEXT_V2 internal");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.system_font) == 0x2c, "BOOT_GRAPHICS_CONTEXT_V2 system_font");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.system_font_size) == 0x30, "BOOT_GRAPHICS_CONTEXT_V2 system_font_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.unk5) == 0x34, "BOOT_GRAPHICS_CONTEXT_V2 unk5");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.console_font) == 0x38, "BOOT_GRAPHICS_CONTEXT_V2 console_font");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.console_font_size) == 0x3c, "BOOT_GRAPHICS_CONTEXT_V2 console_font_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.boot_identifier) == 0x40, "BOOT_GRAPHICS_CONTEXT_V2 boot_identifier");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.version) == 0x50, "BOOT_GRAPHICS_CONTEXT_V2 version");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.unk6) == 0x54, "BOOT_GRAPHICS_CONTEXT_V2 unk6");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.unk7) == 0x58, "BOOT_GRAPHICS_CONTEXT_V2 unk7");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.mui) == 0x5c, "BOOT_GRAPHICS_CONTEXT_V2 mui");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.mui_size) == 0x60, "BOOT_GRAPHICS_CONTEXT_V2 mui_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.logo_bitmap) == 0x64, "BOOT_GRAPHICS_CONTEXT_V2 logo_bitmap");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.unk8) == 0x68, "BOOT_GRAPHICS_CONTEXT_V2 unk8");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.logo_bitmap_size) == 0x6c, "BOOT_GRAPHICS_CONTEXT_V2 logo_bitmap_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.unk9) == 0x70, "BOOT_GRAPHICS_CONTEXT_V2 unk9");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.unk10) == 0x74, "BOOT_GRAPHICS_CONTEXT_V2 unk10");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.logo_bitmap_width) == 0x78, "BOOT_GRAPHICS_CONTEXT_V2 logo_bitmap_width");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.logo_bitmap_height) == 0x7c, "BOOT_GRAPHICS_CONTEXT_V2 logo_bitmap_height");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.unk11) == 0x80, "BOOT_GRAPHICS_CONTEXT_V2 unk11");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block2.unk19) == 0x8c, "BOOT_GRAPHICS_CONTEXT_V2 unk19");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block2.reserve_pool) == 0x90, "BOOT_GRAPHICS_CONTEXT_V2 reserve_pool");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block2.reserve_pool_size) == 0x94, "BOOT_GRAPHICS_CONTEXT_V2 reserve_pool_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block2.string_resources) == 0x98, "BOOT_GRAPHICS_CONTEXT_V2 string_resources");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block2.progress_resources) == 0x9c, "BOOT_GRAPHICS_CONTEXT_V2 progress_resources");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, edid) == 0xa0, "BOOT_GRAPHICS_CONTEXT_V2 edid");
+#elif defined(__x86_64__)
+static_assert(sizeof(BOOT_GRAPHICS_CONTEXT_V2) == 0x160, "BOOT_GRAPHICS_CONTEXT_V2 has incorrect size.");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.unk1) == 0x0, "BOOT_GRAPHICS_CONTEXT_V2 unk1");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.unk2) == 0x8, "BOOT_GRAPHICS_CONTEXT_V2 unk2");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.unk3) == 0x10, "BOOT_GRAPHICS_CONTEXT_V2 unk3");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.unk4) == 0x18, "BOOT_GRAPHICS_CONTEXT_V2 unk4");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.internal) == 0x20, "BOOT_GRAPHICS_CONTEXT_V2 internal");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.system_font) == 0x48, "BOOT_GRAPHICS_CONTEXT_V2 system_font");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.system_font_size) == 0x50, "BOOT_GRAPHICS_CONTEXT_V2 system_font_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.unk5) == 0x54, "BOOT_GRAPHICS_CONTEXT_V2 unk5");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.console_font) == 0x58, "BOOT_GRAPHICS_CONTEXT_V2 console_font");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.console_font_size) == 0x60, "BOOT_GRAPHICS_CONTEXT_V2 console_font_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.boot_identifier) == 0x64, "BOOT_GRAPHICS_CONTEXT_V2 boot_identifier");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.version) == 0x74, "BOOT_GRAPHICS_CONTEXT_V2 version");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.unk6) == 0x78, "BOOT_GRAPHICS_CONTEXT_V2 unk6");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.unk7) == 0x7c, "BOOT_GRAPHICS_CONTEXT_V2 unk7");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.mui) == 0x80, "BOOT_GRAPHICS_CONTEXT_V2 mui");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.mui_size) == 0x88, "BOOT_GRAPHICS_CONTEXT_V2 mui_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.logo_bitmap) == 0x90, "BOOT_GRAPHICS_CONTEXT_V2 logo_bitmap");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.unk8) == 0x98, "BOOT_GRAPHICS_CONTEXT_V2 unk8");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.logo_bitmap_size) == 0xa0, "BOOT_GRAPHICS_CONTEXT_V2 logo_bitmap_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.unk9) == 0xa4, "BOOT_GRAPHICS_CONTEXT_V2 unk9");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.unk10) == 0xa8, "BOOT_GRAPHICS_CONTEXT_V2 unk10");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.logo_bitmap_width) == 0xac, "BOOT_GRAPHICS_CONTEXT_V2 logo_bitmap_width");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.logo_bitmap_height) == 0xb0, "BOOT_GRAPHICS_CONTEXT_V2 logo_bitmap_height");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block1.unk11) == 0xb4, "BOOT_GRAPHICS_CONTEXT_V2 unk11");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block2.unk19) == 0xb8, "BOOT_GRAPHICS_CONTEXT_V2 unk19");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block2.reserve_pool) == 0xc0, "BOOT_GRAPHICS_CONTEXT_V2 reserve_pool");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block2.reserve_pool_size) == 0xc8, "BOOT_GRAPHICS_CONTEXT_V2 reserve_pool_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block2.string_resources) == 0xd0, "BOOT_GRAPHICS_CONTEXT_V2 string_resources");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, block2.progress_resources) == 0xd8, "BOOT_GRAPHICS_CONTEXT_V2 progress_resources");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V2, edid) == 0xe0, "BOOT_GRAPHICS_CONTEXT_V2 edid");
+#endif
+
+typedef struct {
+    bgblock1 block1;
+    void* qr_code_bitmap;
+    uint32_t qr_code_bitmap_size;
+    uint32_t qr_code_bitmap_width;
+    uint32_t qr_code_bitmap_height;
+    uint32_t unk13;
+    uint32_t unk14;
+    uint32_t unk15;
+#ifdef _X86_
+    uint32_t unk16;
+#endif
+    bgblock2 block2;
+    uint8_t edid[128];
+    uint32_t unk20;
+    uint32_t unk21;
+    uint32_t unk22;
+    uint32_t unk23;
+} BOOT_GRAPHICS_CONTEXT_V3;
+
+#ifdef _X86_
+static_assert(sizeof(BOOT_GRAPHICS_CONTEXT_V3) == 0x148, "BOOT_GRAPHICS_CONTEXT_V3 has incorrect size.");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.unk1) == 0x0, "BOOT_GRAPHICS_CONTEXT_V3 unk1");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.unk2) == 0x4, "BOOT_GRAPHICS_CONTEXT_V3 unk2");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.unk3) == 0x8, "BOOT_GRAPHICS_CONTEXT_V3 unk3");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.unk4) == 0xc, "BOOT_GRAPHICS_CONTEXT_V3 unk4");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.internal) == 0x10, "BOOT_GRAPHICS_CONTEXT_V3 internal");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.system_font) == 0x2c, "BOOT_GRAPHICS_CONTEXT_V3 system_font");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.system_font_size) == 0x30, "BOOT_GRAPHICS_CONTEXT_V3 system_font_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.unk5) == 0x34, "BOOT_GRAPHICS_CONTEXT_V3 unk5");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.console_font) == 0x38, "BOOT_GRAPHICS_CONTEXT_V3 console_font");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.console_font_size) == 0x3c, "BOOT_GRAPHICS_CONTEXT_V3 console_font_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.boot_identifier) == 0x40, "BOOT_GRAPHICS_CONTEXT_V3 boot_identifier");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.version) == 0x50, "BOOT_GRAPHICS_CONTEXT_V3 version");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.unk6) == 0x54, "BOOT_GRAPHICS_CONTEXT_V3 unk6");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.unk7) == 0x58, "BOOT_GRAPHICS_CONTEXT_V3 unk7");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.mui) == 0x5c, "BOOT_GRAPHICS_CONTEXT_V3 mui");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.mui_size) == 0x60, "BOOT_GRAPHICS_CONTEXT_V3 mui_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.logo_bitmap) == 0x64, "BOOT_GRAPHICS_CONTEXT_V3 logo_bitmap");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.unk8) == 0x68, "BOOT_GRAPHICS_CONTEXT_V3 unk8");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.logo_bitmap_size) == 0x6c, "BOOT_GRAPHICS_CONTEXT_V3 logo_bitmap_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.unk9) == 0x70, "BOOT_GRAPHICS_CONTEXT_V3 unk9");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.unk10) == 0x74, "BOOT_GRAPHICS_CONTEXT_V3 unk10");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.logo_bitmap_width) == 0x78, "BOOT_GRAPHICS_CONTEXT_V3 logo_bitmap_width");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.logo_bitmap_height) == 0x7c, "BOOT_GRAPHICS_CONTEXT_V3 logo_bitmap_height");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.unk11) == 0x80, "BOOT_GRAPHICS_CONTEXT_V3 unk11");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, qr_code_bitmap) == 0x84, "BOOT_GRAPHICS_CONTEXT_V3 qr_code_bitmap");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, qr_code_bitmap_size) == 0x88, "BOOT_GRAPHICS_CONTEXT_V3 qr_code_bitmap_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, qr_code_bitmap_width) == 0x8c, "BOOT_GRAPHICS_CONTEXT_V3 qr_code_bitmap_width");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, qr_code_bitmap_height) == 0x90, "BOOT_GRAPHICS_CONTEXT_V3 qr_code_bitmap_height");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, unk13) == 0x94, "BOOT_GRAPHICS_CONTEXT_V3 unk13");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, unk14) == 0x98, "BOOT_GRAPHICS_CONTEXT_V3 unk14");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, unk15) == 0x9c, "BOOT_GRAPHICS_CONTEXT_V3 unk15");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, unk16) == 0xa0, "BOOT_GRAPHICS_CONTEXT_V3 unk16");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block2.unk19) == 0xa4, "BOOT_GRAPHICS_CONTEXT_V3 unk19");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block2.reserve_pool) == 0xa8, "BOOT_GRAPHICS_CONTEXT_V3 reserve_pool");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block2.reserve_pool_size) == 0xac, "BOOT_GRAPHICS_CONTEXT_V3 reserve_pool_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block2.string_resources) == 0xb0, "BOOT_GRAPHICS_CONTEXT_V3 string_resources");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block2.progress_resources) == 0xb4, "BOOT_GRAPHICS_CONTEXT_V3 progress_resources");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, edid) == 0xb8, "BOOT_GRAPHICS_CONTEXT_V3 edid");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, unk20) == 0x138, "BOOT_GRAPHICS_CONTEXT_V3 unk20");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, unk21) == 0x13c, "BOOT_GRAPHICS_CONTEXT_V3 unk21");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, unk22) == 0x140, "BOOT_GRAPHICS_CONTEXT_V3 unk22");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, unk23) == 0x144, "BOOT_GRAPHICS_CONTEXT_V3 unk23");
+#elif defined(__x86_64__)
+static_assert(sizeof(BOOT_GRAPHICS_CONTEXT_V3) == 0x190, "BOOT_GRAPHICS_CONTEXT_V3 has incorrect size.");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.unk1) == 0x0, "BOOT_GRAPHICS_CONTEXT_V3 unk1");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.unk2) == 0x8, "BOOT_GRAPHICS_CONTEXT_V3 unk2");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.unk3) == 0x10, "BOOT_GRAPHICS_CONTEXT_V3 unk3");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.unk4) == 0x18, "BOOT_GRAPHICS_CONTEXT_V3 unk4");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.internal) == 0x20, "BOOT_GRAPHICS_CONTEXT_V3 internal");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.system_font) == 0x48, "BOOT_GRAPHICS_CONTEXT_V3 system_font");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.system_font_size) == 0x50, "BOOT_GRAPHICS_CONTEXT_V3 system_font_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.unk5) == 0x54, "BOOT_GRAPHICS_CONTEXT_V3 unk5");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.console_font) == 0x58, "BOOT_GRAPHICS_CONTEXT_V3 console_font");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.console_font_size) == 0x60, "BOOT_GRAPHICS_CONTEXT_V3 console_font_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.boot_identifier) == 0x64, "BOOT_GRAPHICS_CONTEXT_V3 boot_identifier");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.version) == 0x74, "BOOT_GRAPHICS_CONTEXT_V3 version");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.unk6) == 0x78, "BOOT_GRAPHICS_CONTEXT_V3 unk6");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.unk7) == 0x7c, "BOOT_GRAPHICS_CONTEXT_V3 unk7");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.mui) == 0x80, "BOOT_GRAPHICS_CONTEXT_V3 mui");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.mui_size) == 0x88, "BOOT_GRAPHICS_CONTEXT_V3 mui_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.logo_bitmap) == 0x90, "BOOT_GRAPHICS_CONTEXT_V3 logo_bitmap");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.unk8) == 0x98, "BOOT_GRAPHICS_CONTEXT_V3 unk8");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.logo_bitmap_size) == 0xa0, "BOOT_GRAPHICS_CONTEXT_V3 logo_bitmap_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.unk9) == 0xa4, "BOOT_GRAPHICS_CONTEXT_V3 unk9");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.unk10) == 0xa8, "BOOT_GRAPHICS_CONTEXT_V3 unk10");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.logo_bitmap_width) == 0xac, "BOOT_GRAPHICS_CONTEXT_V3 logo_bitmap_width");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.logo_bitmap_height) == 0xb0, "BOOT_GRAPHICS_CONTEXT_V3 logo_bitmap_height");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block1.unk11) == 0xb4, "BOOT_GRAPHICS_CONTEXT_V3 unk11");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, qr_code_bitmap) == 0xb8, "BOOT_GRAPHICS_CONTEXT_V3 qr_code_bitmap");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, qr_code_bitmap_size) == 0xc0, "BOOT_GRAPHICS_CONTEXT_V3 qr_code_bitmap_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, qr_code_bitmap_width) == 0xc4, "BOOT_GRAPHICS_CONTEXT_V3 qr_code_bitmap_width");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, qr_code_bitmap_height) == 0xc8, "BOOT_GRAPHICS_CONTEXT_V3 qr_code_bitmap_height");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, unk13) == 0xcc, "BOOT_GRAPHICS_CONTEXT_V3 unk13");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, unk14) == 0xd0, "BOOT_GRAPHICS_CONTEXT_V3 unk14");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, unk15) == 0xd4, "BOOT_GRAPHICS_CONTEXT_V3 unk15");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block2.unk19) == 0xd8, "BOOT_GRAPHICS_CONTEXT_V3 unk19");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block2.reserve_pool) == 0xe0, "BOOT_GRAPHICS_CONTEXT_V3 reserve_pool");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block2.reserve_pool_size) == 0xe8, "BOOT_GRAPHICS_CONTEXT_V3 reserve_pool_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block2.string_resources) == 0xf0, "BOOT_GRAPHICS_CONTEXT_V3 string_resources");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, block2.progress_resources) == 0xf8, "BOOT_GRAPHICS_CONTEXT_V3 progress_resources");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, edid) == 0x100, "BOOT_GRAPHICS_CONTEXT_V3 edid");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, unk20) == 0x180, "BOOT_GRAPHICS_CONTEXT_V3 unk20");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, unk21) == 0x184, "BOOT_GRAPHICS_CONTEXT_V3 unk21");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, unk22) == 0x188, "BOOT_GRAPHICS_CONTEXT_V3 unk22");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V3, unk23) == 0x18c, "BOOT_GRAPHICS_CONTEXT_V3 unk23");
+#endif
+
+typedef struct {
+    bgblock1 block1;
+    void* qr_code_bitmap;
+    uint32_t qr_code_bitmap_size;
+    uint32_t qr_code_bitmap_width;
+    uint32_t qr_code_bitmap_height;
+    uint32_t unk13;
+    uint32_t unk14;
+    uint32_t unk15;
+    void* unk16;
+    uint32_t unk17;
+    uint32_t unk18;
+    bgblock2 block2;
+    uint8_t edid[128];
+    uint32_t unk20;
+    uint32_t unk21;
+    uint32_t unk22;
+    uint32_t unk23;
+} BOOT_GRAPHICS_CONTEXT_V4;
+
+#ifdef _X86_
+static_assert(sizeof(BOOT_GRAPHICS_CONTEXT_V4) == 0x150, "BOOT_GRAPHICS_CONTEXT_V4 has incorrect size.");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.unk1) == 0x0, "BOOT_GRAPHICS_CONTEXT_V4 unk1");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.unk2) == 0x4, "BOOT_GRAPHICS_CONTEXT_V4 unk2");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.unk3) == 0x8, "BOOT_GRAPHICS_CONTEXT_V4 unk3");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.unk4) == 0xc, "BOOT_GRAPHICS_CONTEXT_V4 unk4");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.internal) == 0x10, "BOOT_GRAPHICS_CONTEXT_V4 internal");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.system_font) == 0x2c, "BOOT_GRAPHICS_CONTEXT_V4 system_font");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.system_font_size) == 0x30, "BOOT_GRAPHICS_CONTEXT_V4 system_font_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.unk5) == 0x34, "BOOT_GRAPHICS_CONTEXT_V4 unk5");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.console_font) == 0x38, "BOOT_GRAPHICS_CONTEXT_V4 console_font");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.console_font_size) == 0x3c, "BOOT_GRAPHICS_CONTEXT_V4 console_font_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.boot_identifier) == 0x40, "BOOT_GRAPHICS_CONTEXT_V4 boot_identifier");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.version) == 0x50, "BOOT_GRAPHICS_CONTEXT_V4 version");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.unk6) == 0x54, "BOOT_GRAPHICS_CONTEXT_V4 unk6");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.unk7) == 0x58, "BOOT_GRAPHICS_CONTEXT_V4 unk7");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.mui) == 0x5c, "BOOT_GRAPHICS_CONTEXT_V4 mui");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.mui_size) == 0x60, "BOOT_GRAPHICS_CONTEXT_V4 mui_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.logo_bitmap) == 0x64, "BOOT_GRAPHICS_CONTEXT_V4 logo_bitmap");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.unk8) == 0x68, "BOOT_GRAPHICS_CONTEXT_V4 unk8");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.logo_bitmap_size) == 0x6c, "BOOT_GRAPHICS_CONTEXT_V4 logo_bitmap_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.unk9) == 0x70, "BOOT_GRAPHICS_CONTEXT_V4 unk9");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.unk10) == 0x74, "BOOT_GRAPHICS_CONTEXT_V4 unk10");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.logo_bitmap_width) == 0x78, "BOOT_GRAPHICS_CONTEXT_V4 logo_bitmap_width");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.logo_bitmap_height) == 0x7c, "BOOT_GRAPHICS_CONTEXT_V4 logo_bitmap_height");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.unk11) == 0x80, "BOOT_GRAPHICS_CONTEXT_V4 unk11");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, qr_code_bitmap) == 0x84, "BOOT_GRAPHICS_CONTEXT_V4 qr_code_bitmap");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, qr_code_bitmap_size) == 0x88, "BOOT_GRAPHICS_CONTEXT_V4 qr_code_bitmap_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, qr_code_bitmap_width) == 0x8c, "BOOT_GRAPHICS_CONTEXT_V4 qr_code_bitmap_width");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, qr_code_bitmap_height) == 0x90, "BOOT_GRAPHICS_CONTEXT_V4 qr_code_bitmap_height");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, unk13) == 0x94, "BOOT_GRAPHICS_CONTEXT_V4 unk13");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, unk14) == 0x98, "BOOT_GRAPHICS_CONTEXT_V4 unk14");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, unk15) == 0x9c, "BOOT_GRAPHICS_CONTEXT_V4 unk15");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, unk16) == 0xa0, "BOOT_GRAPHICS_CONTEXT_V4 unk16");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, unk17) == 0xa4, "BOOT_GRAPHICS_CONTEXT_V4 unk17");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, unk18) == 0xa8, "BOOT_GRAPHICS_CONTEXT_V4 unk18");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block2.unk19) == 0xac, "BOOT_GRAPHICS_CONTEXT_V4 unk19");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block2.reserve_pool) == 0xb0, "BOOT_GRAPHICS_CONTEXT_V4 reserve_pool");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block2.reserve_pool_size) == 0xb4, "BOOT_GRAPHICS_CONTEXT_V4 reserve_pool_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block2.string_resources) == 0xb8, "BOOT_GRAPHICS_CONTEXT_V4 string_resources");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block2.progress_resources) == 0xbc, "BOOT_GRAPHICS_CONTEXT_V4 progress_resources");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, edid) == 0xc0, "BOOT_GRAPHICS_CONTEXT_V4 edid");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, unk20) == 0x140, "BOOT_GRAPHICS_CONTEXT_V4 unk20");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, unk21) == 0x144, "BOOT_GRAPHICS_CONTEXT_V4 unk21");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, unk22) == 0x148, "BOOT_GRAPHICS_CONTEXT_V4 unk22");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, unk23) == 0x14c, "BOOT_GRAPHICS_CONTEXT_V4 unk23");
+#elif defined(__x86_64__)
+static_assert(sizeof(BOOT_GRAPHICS_CONTEXT_V4) == 0x1a0, "BOOT_GRAPHICS_CONTEXT_V4 has incorrect size.");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.unk1) == 0x0, "BOOT_GRAPHICS_CONTEXT_V4 unk1");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.unk2) == 0x8, "BOOT_GRAPHICS_CONTEXT_V4 unk2");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.unk3) == 0x10, "BOOT_GRAPHICS_CONTEXT_V4 unk3");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.unk4) == 0x18, "BOOT_GRAPHICS_CONTEXT_V4 unk4");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.internal) == 0x20, "BOOT_GRAPHICS_CONTEXT_V4 internal");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.system_font) == 0x48, "BOOT_GRAPHICS_CONTEXT_V4 system_font");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.system_font_size) == 0x50, "BOOT_GRAPHICS_CONTEXT_V4 system_font_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.unk5) == 0x54, "BOOT_GRAPHICS_CONTEXT_V4 unk5");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.console_font) == 0x58, "BOOT_GRAPHICS_CONTEXT_V4 console_font");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.console_font_size) == 0x60, "BOOT_GRAPHICS_CONTEXT_V4 console_font_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.boot_identifier) == 0x64, "BOOT_GRAPHICS_CONTEXT_V4 boot_identifier");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.version) == 0x74, "BOOT_GRAPHICS_CONTEXT_V4 version");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.unk6) == 0x78, "BOOT_GRAPHICS_CONTEXT_V4 unk6");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.unk7) == 0x7c, "BOOT_GRAPHICS_CONTEXT_V4 unk7");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.mui) == 0x80, "BOOT_GRAPHICS_CONTEXT_V4 mui");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.mui_size) == 0x88, "BOOT_GRAPHICS_CONTEXT_V4 mui_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.logo_bitmap) == 0x90, "BOOT_GRAPHICS_CONTEXT_V4 logo_bitmap");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.unk8) == 0x98, "BOOT_GRAPHICS_CONTEXT_V4 unk8");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.logo_bitmap_size) == 0xa0, "BOOT_GRAPHICS_CONTEXT_V4 logo_bitmap_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.unk9) == 0xa4, "BOOT_GRAPHICS_CONTEXT_V4 unk9");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.unk10) == 0xa8, "BOOT_GRAPHICS_CONTEXT_V4 unk10");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.logo_bitmap_width) == 0xac, "BOOT_GRAPHICS_CONTEXT_V4 logo_bitmap_width");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.logo_bitmap_height) == 0xb0, "BOOT_GRAPHICS_CONTEXT_V4 logo_bitmap_height");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block1.unk11) == 0xb4, "BOOT_GRAPHICS_CONTEXT_V4 unk11");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, qr_code_bitmap) == 0xb8, "BOOT_GRAPHICS_CONTEXT_V4 qr_code_bitmap");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, qr_code_bitmap_size) == 0xc0, "BOOT_GRAPHICS_CONTEXT_V4 qr_code_bitmap_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, qr_code_bitmap_width) == 0xc4, "BOOT_GRAPHICS_CONTEXT_V4 qr_code_bitmap_width");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, qr_code_bitmap_height) == 0xc8, "BOOT_GRAPHICS_CONTEXT_V4 qr_code_bitmap_height");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, unk13) == 0xcc, "BOOT_GRAPHICS_CONTEXT_V4 unk13");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, unk14) == 0xd0, "BOOT_GRAPHICS_CONTEXT_V4 unk14");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, unk15) == 0xd4, "BOOT_GRAPHICS_CONTEXT_V4 unk15");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, unk16) == 0xd8, "BOOT_GRAPHICS_CONTEXT_V4 unk16");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, unk17) == 0xe0, "BOOT_GRAPHICS_CONTEXT_V4 unk17");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, unk18) == 0xe4, "BOOT_GRAPHICS_CONTEXT_V4 unk18");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block2.unk19) == 0xe8, "BOOT_GRAPHICS_CONTEXT_V4 unk19");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block2.reserve_pool) == 0xf0, "BOOT_GRAPHICS_CONTEXT_V4 reserve_pool");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block2.reserve_pool_size) == 0xf8, "BOOT_GRAPHICS_CONTEXT_V4 reserve_pool_size");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block2.string_resources) == 0x100, "BOOT_GRAPHICS_CONTEXT_V4 string_resources");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, block2.progress_resources) == 0x108, "BOOT_GRAPHICS_CONTEXT_V4 progress_resources");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, edid) == 0x110, "BOOT_GRAPHICS_CONTEXT_V4 edid");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, unk20) == 0x190, "BOOT_GRAPHICS_CONTEXT_V4 unk20");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, unk21) == 0x194, "BOOT_GRAPHICS_CONTEXT_V4 unk21");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, unk22) == 0x198, "BOOT_GRAPHICS_CONTEXT_V4 unk22");
+static_assert(offsetof(BOOT_GRAPHICS_CONTEXT_V4, unk23) == 0x19c, "BOOT_GRAPHICS_CONTEXT_V4 unk23");
 #endif

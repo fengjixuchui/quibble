@@ -911,6 +911,7 @@ EFI_STATUS kdnet_init(EFI_BOOT_SERVICES* bs, EFI_FILE_HANDLE dir, EFI_FILE_HANDL
         EFI_DEVICE_PATH_PROTOCOL* device_path;
         ACPI_HID_DEVICE_PATH* acpi_dp;
         PCI_DEVICE_PATH* pci_dp;
+        unsigned int k;
 
         Status = bs->OpenProtocol(handles[i], &guid, (void**)&io, image_handle, NULL,
                                   EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL);
@@ -1010,32 +1011,47 @@ EFI_STATUS kdnet_init(EFI_BOOT_SERVICES* bs, EFI_FILE_HANDLE dir, EFI_FILE_HANDL
         ddd->NameSpace = KdNameSpacePCI;
         // FIXME - TransportType, TransportData
 
-        for (unsigned int i = 0; i < MAXIMUM_DEBUG_BARS; i++) {
+        k = 0;
+
+        for (unsigned int j = 0; j < MAXIMUM_DEBUG_BARS; j++) {
             void* res;
 
-            if (!EFI_ERROR(io->GetBarAttributes(io, i, NULL, &res))) {
+            Status = io->GetBarAttributes(io, j, NULL, &res);
+
+            if (EFI_ERROR(Status)) {
+                if (Status != EFI_UNSUPPORTED) // index not valid for this controller
+                    print_error(L"GetBarAttributes", Status);
+            } else {
                 pci_bar_info* info = (pci_bar_info*)res;
 
-                if (info->space_descriptor != 0x8a)
-                    print(L"First byte of pci_bar_info was not 8a.\r\n");
-                else if (info->resource_type != 0 && info->resource_type != 1) {
+                if (info->space_descriptor != 0x8a) { // QWORD address space descriptor
+                    if (info->space_descriptor != 0x79) { // end tag
+                        print(L"First byte of pci_bar_info was not 8a (");
+                        print_hex(info->space_descriptor);
+                        print(L").\r\n");
+                    }
+                } else if (info->resource_type != 0 && info->resource_type != 1) {
                     print(L"Unsupported resource type ");
                     print_hex(info->resource_type);
                     print(L".\r\n");
                 } else {
                     if (info->resource_type == 0)
-                        ddd->BaseAddress[i].Type = CmResourceTypeMemory;
+                        ddd->BaseAddress[k].Type = CmResourceTypeMemory;
                     else
-                        ddd->BaseAddress[i].Type = CmResourceTypePort;
+                        ddd->BaseAddress[k].Type = CmResourceTypePort;
 
-                    ddd->BaseAddress[i].Valid = 1;
-                    ddd->BaseAddress[i].TranslatedAddress = (uint8_t*)(uintptr_t)info->address_minimum;
-                    ddd->BaseAddress[i].Length = info->address_length;
+                    ddd->BaseAddress[k].Valid = 1;
+                    ddd->BaseAddress[k].TranslatedAddress = (uint8_t*)(uintptr_t)info->address_minimum;
+                    ddd->BaseAddress[k].Length = info->address_length;
+
+                    k++;
                 }
 
                 bs->FreePool(res);
             }
         }
+
+        Status = EFI_SUCCESS;
 
         bs->CloseProtocol(handles[i], &guid2, image_handle, NULL);
         bs->CloseProtocol(handles[i], &guid, image_handle, NULL);
