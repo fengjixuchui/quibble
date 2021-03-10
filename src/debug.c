@@ -4,6 +4,7 @@
 #include "misc.h"
 #include "peload.h"
 #include "x86.h"
+#include "print.h"
 
 typedef int32_t NTSTATUS;
 #define NT_SUCCESS(Status) ((Status)>=0)
@@ -174,7 +175,7 @@ EFI_STATUS find_kd_export(EFI_PE_IMAGE* kdstub, uint16_t build) {
     Status = kdstub->FindExport(kdstub, "KdInitializeLibrary", &addr, NULL);
 
     if (EFI_ERROR(Status)) {
-        print_error(L"FindExport", Status);
+        print_error("FindExport", Status);
         return Status;
     }
 
@@ -184,7 +185,7 @@ EFI_STATUS find_kd_export(EFI_PE_IMAGE* kdstub, uint16_t build) {
         Status = kdstub->FindExport(kdstub, "KdInitializeController", &addr, NULL);
 
         if (EFI_ERROR(Status)) {
-            print_error(L"FindExport", Status);
+            print_error("FindExport", Status);
             return Status;
         }
 
@@ -203,15 +204,20 @@ EFI_STATUS allocate_kdnet_hw_context(EFI_PE_IMAGE* kdstub, DEBUG_DEVICE_DESCRIPT
 
     Status = find_kd_export(kdstub, build);
     if (EFI_ERROR(Status)) {
-        print_error(L"find_kd_export", Status);
+        print_error("find_kd_export", Status);
         return Status;
     }
 
     nt_Status = call_KdInitializeLibrary(ddd, &exports, &funcs, build);
     if (!NT_SUCCESS(nt_Status)) {
-        print(L"KdInitializeLibrary returned ");
-        print_hex((uint32_t)nt_Status);
-        print(L".\r\n");
+        char s[255], *p;
+
+        p = stpcpy(s, "KdInitializeLibrary returned ");
+        p = hex_to_str(p, (uint32_t)nt_Status);
+        p = stpcpy(p, ".\n");
+
+        print_string(s);
+
         return EFI_INVALID_PARAMETER;
     }
 
@@ -223,7 +229,7 @@ EFI_STATUS allocate_kdnet_hw_context(EFI_PE_IMAGE* kdstub, DEBUG_DEVICE_DESCRIPT
     if (ddd->TransportData.HwContextSize != 0) {
         Status = systable->BootServices->AllocatePages(AllocateAnyPages, EfiLoaderData, PAGE_COUNT(ddd->TransportData.HwContextSize), &addr);
         if (EFI_ERROR(Status)) {
-            print_error(L"AllocatePages", Status);
+            print_error("AllocatePages", Status);
             return Status;
         }
 

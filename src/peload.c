@@ -22,6 +22,7 @@
 #include "misc.h"
 #include "quibble.h"
 #include "tinymt32.h"
+#include "print.h"
 
 typedef struct {
     EFI_PE_IMAGE public;
@@ -60,12 +61,12 @@ static bool check_header(uint8_t* data, size_t size, IMAGE_NT_HEADERS** nth) {
     IMAGE_NT_HEADERS* nt_header;
 
     if (size < sizeof(IMAGE_DOS_HEADER)) {
-        print(L"Image was shorter than IMAGE_DOS_HEADER.\r\n");
+        print_string("Image was shorter than IMAGE_DOS_HEADER.\n");
         return false;
     }
 
     if (dos_header->e_magic != IMAGE_DOS_SIGNATURE) {
-        print(L"Incorrect DOS signature.\r\n");
+        print_string("Incorrect DOS signature.\n");
         return false;
     }
 
@@ -74,18 +75,18 @@ static bool check_header(uint8_t* data, size_t size, IMAGE_NT_HEADERS** nth) {
     // FIXME - check no overflow
 
     if (nt_header->Signature != IMAGE_NT_SIGNATURE) {
-        print(L"Incorrect PE signature.\r\n");
+        print_string("Incorrect PE signature.\n");
         return false;
     }
 
 #ifdef _X86_
     if (nt_header->FileHeader.Machine != IMAGE_FILE_MACHINE_I386) {
-        print(L"Unsupported architecture.\r\n");
+        print_string("Unsupported architecture.\n");
         return false;
     }
 #elif defined(__x86_64__)
     if (nt_header->FileHeader.Machine != IMAGE_FILE_MACHINE_AMD64) {
-        print(L"Unsupported architecture.\r\n");
+        print_string("Unsupported architecture.\n");
         return false;
     }
 #endif
@@ -94,7 +95,7 @@ static bool check_header(uint8_t* data, size_t size, IMAGE_NT_HEADERS** nth) {
 
     if (nt_header->OptionalHeader32.Magic != IMAGE_NT_OPTIONAL_HDR32_MAGIC &&
         nt_header->OptionalHeader32.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC) {
-        print(L"Unrecognized optional header signature.\r\n");
+        print_string("Unrecognized optional header signature.\n");
         return false;
     }
 
@@ -333,9 +334,13 @@ static EFI_STATUS resolve_imports2_64(pe_image* img, pe_image* img2, IMAGE_EXPOR
             }
 
             if (!found) {
-                print(L"Unable to resolve function ");
-                print_string(name);
-                print(L".\r\n");
+                char s[255], *p;
+
+                p = stpcpy(s, "Unable to resolve function ");
+                p = stpcpy(p, name);
+                p = stpcpy(p, ".\n");
+
+                print_string(s);
 
                 return EFI_INVALID_PARAMETER;
             }
@@ -404,9 +409,13 @@ static EFI_STATUS resolve_imports2_32(pe_image* img, pe_image* img2, IMAGE_EXPOR
             }
 
             if (!found) {
-                print(L"Unable to resolve function ");
-                print_string(name);
-                print(L".\r\n");
+                char s[255], *p;
+
+                p = stpcpy(s, "Unable to resolve function ");
+                p = stpcpy(p, name);
+                p = stpcpy(p, ".\n");
+
+                print_string(s);
 
                 return EFI_INVALID_PARAMETER;
             }
@@ -463,7 +472,7 @@ static EFI_STATUS EFIAPI resolve_imports(EFI_PE_IMAGE* This, char* LibraryName, 
         if (nt_header->OptionalHeader64.NumberOfRvaAndSizes <= IMAGE_DIRECTORY_ENTRY_IMPORT ||
             nt_header->OptionalHeader64.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress == 0 ||
             nt_header->OptionalHeader64.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].Size < sizeof(IMAGE_IMPORT_DESCRIPTOR)) {
-            print(L"Imports list not found.\r\n");
+            print_string("Imports list not found.\n");
             return EFI_INVALID_PARAMETER;
         }
 
@@ -473,7 +482,7 @@ static EFI_STATUS EFIAPI resolve_imports(EFI_PE_IMAGE* This, char* LibraryName, 
         if (nt_header->OptionalHeader32.NumberOfRvaAndSizes <= IMAGE_DIRECTORY_ENTRY_IMPORT ||
             nt_header->OptionalHeader32.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress == 0 ||
             nt_header->OptionalHeader32.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].Size < sizeof(IMAGE_IMPORT_DESCRIPTOR)) {
-            print(L"Imports list not found.\r\n");
+            print_string("Imports list not found.\n");
             return EFI_INVALID_PARAMETER;
         }
 
@@ -487,7 +496,7 @@ static EFI_STATUS EFIAPI resolve_imports(EFI_PE_IMAGE* This, char* LibraryName, 
         if (nt_header2->OptionalHeader64.NumberOfRvaAndSizes <= IMAGE_DIRECTORY_ENTRY_EXPORT ||
             nt_header2->OptionalHeader64.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress == 0 ||
             nt_header2->OptionalHeader64.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].Size < sizeof(IMAGE_EXPORT_DIRECTORY)) {
-            print(L"Exports list not found.\r\n");
+            print_string("Exports list not found.\n");
             return EFI_INVALID_PARAMETER;
         }
 
@@ -496,7 +505,7 @@ static EFI_STATUS EFIAPI resolve_imports(EFI_PE_IMAGE* This, char* LibraryName, 
         if (nt_header2->OptionalHeader32.NumberOfRvaAndSizes <= IMAGE_DIRECTORY_ENTRY_EXPORT ||
             nt_header2->OptionalHeader32.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress == 0 ||
             nt_header2->OptionalHeader32.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].Size < sizeof(IMAGE_EXPORT_DIRECTORY)) {
-            print(L"Exports list not found.\r\n");
+            print_string("Exports list not found.\n");
             return EFI_INVALID_PARAMETER;
         }
 
@@ -530,7 +539,7 @@ static EFI_STATUS EFIAPI resolve_imports(EFI_PE_IMAGE* This, char* LibraryName, 
     }
 
     if (!found) {
-        print(L"Import not found.\r\n");
+        print_string("Import not found.\n");
         return EFI_INVALID_PARAMETER;
     }
 
@@ -606,11 +615,17 @@ static void do_relocations(pe_image* img, IMAGE_NT_HEADERS* nt_header) {
                     break;
                 }
 
-                default:
-                    print(L"Unsupported relocation type ");
-                    print_hex(type);
-                    print(L".\r\n");
+                default: {
+                    char s[255], *p;
+
+                    p = stpcpy(s, "Unsupported relocation type ");
+                    p = hex_to_str(p, type);
+                    p = stpcpy(p, ".\n");
+
+                    print_string(s);
+
                     return;
+                }
             }
         }
 
@@ -701,26 +716,31 @@ static EFI_STATUS get_version4(VS_VERSION_INFO* ver, uint32_t size, uint32_t* ve
     static const WCHAR key[] = L"VS_VERSION_INFO";
 
     if (ver->wLength > size) {
-        print(L"Version data had size of ");
-        print_dec(ver->wLength);
-        print(L", expected at least ");
-        print_dec(size);
-        print(L".\r\n");
+        char s[255], *p;
+
+        p = stpcpy(s, "Version data had size of ");
+        p = dec_to_str(p, ver->wLength);
+        p = stpcpy(p, ", expected at least ");
+        p = dec_to_str(p, size);
+        p = stpcpy(p, ".\n");
+
+        print_string(s);
+
         return EFI_INVALID_PARAMETER;
     }
 
     if (ver->wValueLength < sizeof(VS_FIXEDFILEINFO)) {
-        print(L"Version data was shorter than VS_FIXEDFILEINFO.\r\n");
+        print_string("Version data was shorter than VS_FIXEDFILEINFO.\n");
         return EFI_INVALID_PARAMETER;
     }
 
     if (memcmp(ver->szKey, key, sizeof(key))) {
-        print(L"Invalid key in version data.\r\n");
+        print_string("Invalid key in version data.\n");
         return EFI_INVALID_PARAMETER;
     }
 
     if (ver->Value.dwSignature != VS_FFI_SIGNATURE) {
-        print(L"Invalid signature in version data.\r\n");
+        print_string("Invalid signature in version data.\n");
         return EFI_INVALID_PARAMETER;
     }
 
@@ -736,14 +756,14 @@ static EFI_STATUS get_version3(pe_image* img, void* res, uint32_t ressize, uint3
     uint32_t size = ressize - offset;
 
     if (size < sizeof(IMAGE_RESOURCE_DIRECTORY)) {
-        print(L"Size was too short for resource directory.\r\n");
+        print_string("Size was too short for resource directory.\n");
         return EFI_INVALID_PARAMETER;
     }
 
     resdir = (IMAGE_RESOURCE_DIRECTORY*)((uint8_t*)res + offset);
 
     if (size < sizeof(IMAGE_RESOURCE_DIRECTORY) + ((resdir->NumberOfNamedEntries + resdir->NumberOfIdEntries) * sizeof(IMAGE_RESOURCE_DIRECTORY_ENTRY))) {
-        print(L"Resource directory was truncated.\r\n");
+        print_string("Resource directory was truncated.\n");
         return EFI_INVALID_PARAMETER;
     }
 
@@ -753,14 +773,14 @@ static EFI_STATUS get_version3(pe_image* img, void* res, uint32_t ressize, uint3
         IMAGE_RESOURCE_DATA_ENTRY* irde;
 
         if (ents[resdir->NumberOfNamedEntries + i].OffsetToData > ressize) {
-            print(L"Offset was after end of directory.\r\n");
+            print_string("Offset was after end of directory.\n");
             return EFI_INVALID_PARAMETER;
         }
 
         irde = (IMAGE_RESOURCE_DATA_ENTRY*)((uint8_t*)res + ents[resdir->NumberOfNamedEntries + i].OffsetToData);
 
         if (irde->OffsetToData + irde->Size > img->size) {
-            print(L"Version data goes past end of file.\r\n");
+            print_string("Version data goes past end of file.\n");
             return EFI_INVALID_PARAMETER;
         }
 
@@ -777,14 +797,14 @@ static EFI_STATUS get_version2(pe_image* img, void* res, uint32_t ressize, uint3
     uint32_t size = ressize - offset;
 
     if (size < sizeof(IMAGE_RESOURCE_DIRECTORY)) {
-        print(L"Size was too short for resource directory.\r\n");
+        print_string("Size was too short for resource directory.\n");
         return EFI_INVALID_PARAMETER;
     }
 
     resdir = (IMAGE_RESOURCE_DIRECTORY*)((uint8_t*)res + offset);
 
     if (size < sizeof(IMAGE_RESOURCE_DIRECTORY) + ((resdir->NumberOfNamedEntries + resdir->NumberOfIdEntries) * sizeof(IMAGE_RESOURCE_DIRECTORY_ENTRY))) {
-        print(L"Resource directory was truncated.\r\n");
+        print_string("Resource directory was truncated.\n");
         return EFI_INVALID_PARAMETER;
     }
 
@@ -792,7 +812,7 @@ static EFI_STATUS get_version2(pe_image* img, void* res, uint32_t ressize, uint3
 
     for (unsigned int i = 0; i < resdir->NumberOfIdEntries; i++) {
         if (ents[resdir->NumberOfNamedEntries + i].OffsetToDirectory > ressize) {
-            print(L"Offset was after end of directory.\r\n");
+            print_string("Offset was after end of directory.\n");
             return EFI_INVALID_PARAMETER;
         }
 
@@ -800,7 +820,7 @@ static EFI_STATUS get_version2(pe_image* img, void* res, uint32_t ressize, uint3
 
         if (Status != EFI_NOT_FOUND) {
             if (EFI_ERROR(Status))
-                print_error(L"get_version3", Status);
+                print_error("get_version3", Status);
 
             return Status;
         }
@@ -822,7 +842,7 @@ static EFI_STATUS EFIAPI get_version(EFI_PE_IMAGE* This, UINT32* VersionMS, UINT
         if (nt_header->OptionalHeader64.NumberOfRvaAndSizes <= IMAGE_DIRECTORY_ENTRY_RESOURCE ||
             nt_header->OptionalHeader64.DataDirectory[IMAGE_DIRECTORY_ENTRY_RESOURCE].VirtualAddress == 0 ||
             nt_header->OptionalHeader64.DataDirectory[IMAGE_DIRECTORY_ENTRY_RESOURCE].Size < sizeof(IMAGE_RESOURCE_DIRECTORY)) {
-            print(L"Resource directory not found.\r\n");
+            print_string("Resource directory not found.\n");
             return EFI_NOT_FOUND;
         }
 
@@ -830,7 +850,7 @@ static EFI_STATUS EFIAPI get_version(EFI_PE_IMAGE* This, UINT32* VersionMS, UINT
 
         if (nt_header->OptionalHeader64.DataDirectory[IMAGE_DIRECTORY_ENTRY_RESOURCE].Size <
             sizeof(IMAGE_RESOURCE_DIRECTORY) + ((resdir->NumberOfNamedEntries + resdir->NumberOfIdEntries) * sizeof(IMAGE_RESOURCE_DIRECTORY_ENTRY))) {
-            print(L"Resource directory was truncated.\r\n");
+            print_string("Resource directory was truncated.\n");
             return EFI_INVALID_PARAMETER;
         }
 
@@ -839,7 +859,7 @@ static EFI_STATUS EFIAPI get_version(EFI_PE_IMAGE* This, UINT32* VersionMS, UINT
         if (nt_header->OptionalHeader32.NumberOfRvaAndSizes <= IMAGE_DIRECTORY_ENTRY_RESOURCE ||
             nt_header->OptionalHeader32.DataDirectory[IMAGE_DIRECTORY_ENTRY_RESOURCE].VirtualAddress == 0 ||
             nt_header->OptionalHeader32.DataDirectory[IMAGE_DIRECTORY_ENTRY_RESOURCE].Size < sizeof(IMAGE_RESOURCE_DIRECTORY)) {
-            print(L"Resource directory not found.\r\n");
+            print_string("Resource directory not found.\n");
             return EFI_NOT_FOUND;
         }
 
@@ -847,7 +867,7 @@ static EFI_STATUS EFIAPI get_version(EFI_PE_IMAGE* This, UINT32* VersionMS, UINT
 
         if (nt_header->OptionalHeader32.DataDirectory[IMAGE_DIRECTORY_ENTRY_RESOURCE].Size <
             sizeof(IMAGE_RESOURCE_DIRECTORY) + ((resdir->NumberOfNamedEntries + resdir->NumberOfIdEntries) * sizeof(IMAGE_RESOURCE_DIRECTORY_ENTRY))) {
-            print(L"Resource directory was truncated.\r\n");
+            print_string("Resource directory was truncated.\n");
             return EFI_INVALID_PARAMETER;
         }
 
@@ -868,7 +888,7 @@ static EFI_STATUS EFIAPI get_version(EFI_PE_IMAGE* This, UINT32* VersionMS, UINT
             addr = (uint8_t*)addr + ents[resdir->NumberOfNamedEntries + i].OffsetToDirectory;
 
             if (ents[resdir->NumberOfNamedEntries + i].OffsetToDirectory > dirsize) {
-                print(L"Offset was after end of directory.\r\n");
+                print_string("Offset was after end of directory.\n");
                 return EFI_INVALID_PARAMETER;
             }
 
@@ -876,7 +896,7 @@ static EFI_STATUS EFIAPI get_version(EFI_PE_IMAGE* This, UINT32* VersionMS, UINT
 
             if (Status != EFI_NOT_FOUND) {
                 if (EFI_ERROR(Status))
-                    print_error(L"get_version2", Status);
+                    print_error("get_version2", Status);
 
                 return Status;
             }
@@ -902,7 +922,7 @@ static EFI_STATUS EFIAPI find_export(EFI_PE_IMAGE* This, char* Function, UINT64*
         if (nt_header->OptionalHeader64.NumberOfRvaAndSizes <= IMAGE_DIRECTORY_ENTRY_EXPORT ||
             nt_header->OptionalHeader64.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress == 0 ||
             nt_header->OptionalHeader64.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].Size < sizeof(IMAGE_EXPORT_DIRECTORY)) {
-            print(L"Exports list not found.\r\n");
+            print_string("Exports list not found.\n");
             return EFI_INVALID_PARAMETER;
         }
 
@@ -911,7 +931,7 @@ static EFI_STATUS EFIAPI find_export(EFI_PE_IMAGE* This, char* Function, UINT64*
         if (nt_header->OptionalHeader32.NumberOfRvaAndSizes <= IMAGE_DIRECTORY_ENTRY_EXPORT ||
             nt_header->OptionalHeader32.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress == 0 ||
             nt_header->OptionalHeader32.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].Size < sizeof(IMAGE_EXPORT_DIRECTORY)) {
-            print(L"Exports list not found.\r\n");
+            print_string("Exports list not found.\n");
             return EFI_INVALID_PARAMETER;
         }
 
@@ -933,9 +953,13 @@ static EFI_STATUS EFIAPI find_export(EFI_PE_IMAGE* This, char* Function, UINT64*
     }
 
     if (!found) {
-        print(L"Unable to resolve function ");
-        print_string(Function);
-        print(L".\r\n");
+        char s[255], *p;
+
+        p = stpcpy(s, "Unable to resolve function ");
+        p = stpcpy(p, Function);
+        p = stpcpy(p, ".\n");
+
+        print_string(s);
 
         return EFI_NOT_FOUND;
     }
@@ -1026,7 +1050,7 @@ static EFI_STATUS EFIAPI Load(EFI_FILE_HANDLE File, void* VirtualAddress, EFI_PE
 
     Status = bs->AllocatePool(EfiLoaderData, sizeof(pe_image), (void**)&img);
     if (EFI_ERROR(Status)) {
-        print_error(L"AllocatePool", Status);
+        print_error("AllocatePool", Status);
         return Status;
     }
 
@@ -1043,14 +1067,14 @@ static EFI_STATUS EFIAPI Load(EFI_FILE_HANDLE File, void* VirtualAddress, EFI_PE
 
             Status = bs->AllocatePool(EfiLoaderData, size, (void**)&file_info2);
             if (EFI_ERROR(Status)) {
-                print_error(L"AllocatePool", Status);
+                print_error("AllocatePool", Status);
                 bs->FreePool(img);
                 return Status;
             }
 
             Status = File->GetInfo(File, &guid, &size, file_info2);
             if (EFI_ERROR(Status)) {
-                print_error(L"File->GetInfo", Status);
+                print_error("File->GetInfo", Status);
                 bs->FreePool(file_info2);
                 bs->FreePool(img);
                 return Status;
@@ -1060,7 +1084,7 @@ static EFI_STATUS EFIAPI Load(EFI_FILE_HANDLE File, void* VirtualAddress, EFI_PE
 
             bs->FreePool(file_info2);
         } else if (EFI_ERROR(Status)) {
-            print_error(L"File->GetInfo", Status);
+            print_error("File->GetInfo", Status);
             bs->FreePool(img);
             return Status;
         } else
@@ -1078,7 +1102,7 @@ static EFI_STATUS EFIAPI Load(EFI_FILE_HANDLE File, void* VirtualAddress, EFI_PE
 
     Status = bs->AllocatePages(AllocateAnyPages, EfiLoaderData, pages, &addr);
     if (EFI_ERROR(Status)) {
-        print_error(L"AllocatePages", Status);
+        print_error("AllocatePages", Status);
         bs->FreePool(img);
         return Status;
     }
@@ -1090,7 +1114,7 @@ static EFI_STATUS EFIAPI Load(EFI_FILE_HANDLE File, void* VirtualAddress, EFI_PE
 
         Status = File->Read(File, &read_size, data);
         if (EFI_ERROR(Status)) {
-            print_error(L"File->Read", Status);
+            print_error("File->Read", Status);
             bs->FreePages((EFI_PHYSICAL_ADDRESS)(uintptr_t)data, pages);
             bs->FreePool(img);
             return Status;
@@ -1098,7 +1122,7 @@ static EFI_STATUS EFIAPI Load(EFI_FILE_HANDLE File, void* VirtualAddress, EFI_PE
     }
 
     if (!check_header(data, file_size, &nt_header)) {
-        print(L"Header check failed.\r\n");
+        print_string("Header check failed.\n");
         bs->FreePages((EFI_PHYSICAL_ADDRESS)(uintptr_t)data, pages);
         bs->FreePool(img);
         return EFI_INVALID_PARAMETER;
@@ -1114,7 +1138,7 @@ static EFI_STATUS EFIAPI Load(EFI_FILE_HANDLE File, void* VirtualAddress, EFI_PE
         img->pages++;
 
     if (img->pages == 0) {
-        print(L"Image size was 0.\r\n");
+        print_string("Image size was 0.\n");
         bs->FreePages((EFI_PHYSICAL_ADDRESS)(uintptr_t)data, pages);
         bs->FreePool(img);
         return EFI_INVALID_PARAMETER;
@@ -1122,7 +1146,7 @@ static EFI_STATUS EFIAPI Load(EFI_FILE_HANDLE File, void* VirtualAddress, EFI_PE
 
     Status = bs->AllocatePages(AllocateAnyPages, EfiLoaderData, img->pages, &addr);
     if (EFI_ERROR(Status)) {
-        print_error(L"AllocatePages", Status);
+        print_error("AllocatePages", Status);
         bs->FreePages((EFI_PHYSICAL_ADDRESS)(uintptr_t)data, pages);
         bs->FreePool(img);
         return Status;
@@ -1149,17 +1173,6 @@ static EFI_STATUS EFIAPI Load(EFI_FILE_HANDLE File, void* VirtualAddress, EFI_PE
 
     for (unsigned int i = 0; i < nt_header->FileHeader.NumberOfSections; i++) {
         uint32_t section_size;
-        /*WCHAR name[9];
-
-        for (unsigned int j = 0; j < 8; j++) {
-            name[j] = sections[i].Name[j];
-        }
-
-        name[8] = 0;
-
-        print(L"Loading section ");
-        print(name);
-        print(L"\r\n");*/
 
         // FIXME - check no overruns
 

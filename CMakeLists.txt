@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.14)
 
-project(quibble VERSION 20200405)
+project(quibble VERSION 20210111)
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/src/config.h.in ${CMAKE_CURRENT_BINARY_DIR}/config.h)
 
@@ -14,6 +14,8 @@ if(MSVC)
     if (${MSVC_CXX_ARCHITECTURE_ID} STREQUAL "X86")
         set(CMAKE_SYSTEM_PROCESSOR "X86")
     endif()
+else()
+    add_compile_options(-fno-stack-check -fno-stack-protector -mno-stack-arg-probe)
 endif()
 
 set(SRC_FILES src/apiset.c
@@ -25,7 +27,8 @@ set(SRC_FILES src/apiset.c
     src/misc.c
     src/peload.c
     src/reg.c
-    src/tinymt32.c)
+    src/tinymt32.c
+    src/print.c)
 
 if(MSVC)
     enable_language(ASM_MASM)
@@ -34,7 +37,13 @@ endif()
 
 add_executable(quibble ${SRC_FILES})
 
+set(CMAKE_DISABLE_FIND_PACKAGE_BZip2 TRUE)
+set(CMAKE_DISABLE_FIND_PACKAGE_HARFBUZZ TRUE)
+add_definitions(-DFT_CONFIG_OPTION_DISABLE_STREAM_SUPPORT)
+add_subdirectory(freetype)
+
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
+include_directories(freetype/include)
 
 if(${CMAKE_C_COMPILER_ID} STREQUAL "GNU")
     target_link_libraries(quibble libgcc.a)
@@ -83,9 +92,30 @@ elseif(MSVC)
 target_link_options(quibble PRIVATE "/SUBSYSTEM:EFI_APPLICATION")
 endif()
 
+target_link_libraries(quibble freetype)
+
+# -----------------------------------
+
 set(SRC_FILES src/btrfs/btrfs.c
     src/btrfs/crc32c.c
-    src/misc.c)
+    src/misc.c
+    src/btrfs/zlib/adler32.c
+    src/btrfs/zlib/deflate.c
+    src/btrfs/zlib/inffast.c
+    src/btrfs/zlib/inflate.c
+    src/btrfs/zlib/inftrees.c
+    src/btrfs/zlib/trees.c
+    src/btrfs/zlib/zutil.c
+    src/btrfs/lzo.c
+    src/btrfs/xxhash.c
+    src/btrfs/zstd/entropy_common.c
+    src/btrfs/zstd/error_private.c
+    src/btrfs/zstd/fse_decompress.c
+    src/btrfs/zstd/huf_decompress.c
+    src/btrfs/zstd/zstd_common.c
+    src/btrfs/zstd/zstd_ddict.c
+    src/btrfs/zstd/zstd_decompress.c
+    src/btrfs/zstd/zstd_decompress_block.c)
 
 add_executable(btrfs ${SRC_FILES})
 
@@ -100,6 +130,7 @@ target_compile_options(btrfs PRIVATE "-ffreestanding")
 target_compile_options(btrfs PRIVATE "-fno-stack-protector")
 target_compile_options(btrfs PRIVATE "-fno-stack-check")
 target_compile_options(btrfs PRIVATE "-mno-stack-arg-probe")
+target_compile_options(btrfs PRIVATE "-Werror-implicit-function-declaration")
 target_compile_options(btrfs PRIVATE "-masm=intel")
 
 target_link_options(btrfs PRIVATE "-nostdlib")

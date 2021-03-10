@@ -20,6 +20,7 @@
 #include "quibble.h"
 #include "misc.h"
 #include "x86.h"
+#include "print.h"
 
 typedef struct {
     LIST_ENTRY list_entry;
@@ -33,13 +34,23 @@ typedef struct {
     char* value;
 } ini_value;
 
-#define VERSION L"Quibble " PROJECT_VERW
-#define URL L"https://github.com/maharmstone/quibble"
+#define VERSION "Quibble " PROJECT_VER
+#define VERSIONW L"Quibble " PROJECT_VERW
 
-boot_option* options = NULL;
-unsigned int num_options, selected_option;
+#define URL "https://github.com/maharmstone/quibble"
+#define URLW L"https://github.com/maharmstone/quibble"
 
-static const WCHAR timeout_message[] = L"Time until selected option is chosen: ";
+static boot_option* options = NULL;
+static unsigned int num_options, selected_option;
+
+extern void* framebuffer;
+extern void* shadow_fb;
+extern EFI_GRAPHICS_OUTPUT_MODE_INFORMATION gop_info;
+extern unsigned int font_height;
+extern text_pos console_pos;
+
+static const char timeout_message[] = "Time until selected option is chosen: ";
+static const WCHAR timeout_messagew[] = L"Time until selected option is chosen: ";
 
 static EFI_STATUS parse_ini_file(char* data, LIST_ENTRY* ini_sections) {
     EFI_STATUS Status;
@@ -127,7 +138,7 @@ static EFI_STATUS parse_ini_file(char* data, LIST_ENTRY* ini_sections) {
                 Status = systable->BootServices->AllocatePool(EfiLoaderData, offsetof(ini_section, name[0]) + sectnamelen + 1,
                                                               (void**)&sect);
                 if (EFI_ERROR(Status)) {
-                    print_error(L"AllocatePool", Status);
+                    print_error("AllocatePool", Status);
                     return Status;
                 }
 
@@ -141,7 +152,7 @@ static EFI_STATUS parse_ini_file(char* data, LIST_ENTRY* ini_sections) {
             Status = systable->BootServices->AllocatePool(EfiLoaderData, sizeof(ini_value) + namelen + 1 + valuelen + 1,
                                                           (void**)&item);
             if (EFI_ERROR(Status)) {
-                print_error(L"AllocatePool", Status);
+                print_error("AllocatePool", Status);
                 return Status;
             }
 
@@ -204,7 +215,7 @@ static EFI_STATUS populate_options_from_ini(LIST_ENTRY* ini_sections, unsigned i
 
     Status = systable->BootServices->AllocatePool(EfiLoaderData, sizeof(boot_option) * num_options, (void**)&options);
     if (EFI_ERROR(Status)) {
-        print_error(L"AllocatePool", Status);
+        print_error("AllocatePool", Status);
         return Status;
     }
 
@@ -262,25 +273,37 @@ static EFI_STATUS populate_options_from_ini(LIST_ENTRY* ini_sections, unsigned i
             ini_section* sect = NULL;
             unsigned int wlen;
 
-            Status = utf8_to_utf16(NULL, 0, &wlen, v->value, len);
-            if (EFI_ERROR(Status)) {
-                print_error(L"utf8_to_utf16", Status);
-                return Status;
-            }
+            if (gop_console) {
+                size_t len = strlen(v->value);
 
-            Status = systable->BootServices->AllocatePool(EfiLoaderData, wlen + sizeof(WCHAR), (void**)&opt->name);
-            if (EFI_ERROR(Status)) {
-                print_error(L"AllocatePool", Status);
-                return Status;
-            }
+                Status = systable->BootServices->AllocatePool(EfiLoaderData, len + 1, (void**)&opt->name);
+                if (EFI_ERROR(Status)) {
+                    print_error("AllocatePool", Status);
+                    return Status;
+                }
 
-            Status = utf8_to_utf16(opt->name, wlen, &wlen, v->value, len);
-            if (EFI_ERROR(Status)) {
-                print_error(L"utf8_to_utf16", Status);
-                return Status;
-            }
+                memcpy(opt->name, v->value, len + 1);
+            } else {
+                Status = utf8_to_utf16(NULL, 0, &wlen, v->value, len);
+                if (EFI_ERROR(Status)) {
+                    print_error("utf8_to_utf16", Status);
+                    return Status;
+                }
 
-            opt->name[wlen / sizeof(WCHAR)] = 0;
+                Status = systable->BootServices->AllocatePool(EfiLoaderData, wlen + sizeof(WCHAR), (void**)&opt->namew);
+                if (EFI_ERROR(Status)) {
+                    print_error("AllocatePool", Status);
+                    return Status;
+                }
+
+                Status = utf8_to_utf16(opt->namew, wlen, &wlen, v->value, len);
+                if (EFI_ERROR(Status)) {
+                    print_error("utf8_to_utf16", Status);
+                    return Status;
+                }
+
+                opt->namew[wlen / sizeof(WCHAR)] = 0;
+            }
 
             // find matching section
             le2 = ini_sections->Flink;
@@ -307,7 +330,7 @@ static EFI_STATUS populate_options_from_ini(LIST_ENTRY* ini_sections, unsigned i
 
                             Status = systable->BootServices->AllocatePool(EfiLoaderData, len + 1, (void**)&opt->system_path);
                             if (EFI_ERROR(Status)) {
-                                print_error(L"AllocatePool", Status);
+                                print_error("AllocatePool", Status);
                                 return Status;
                             }
 
@@ -317,7 +340,7 @@ static EFI_STATUS populate_options_from_ini(LIST_ENTRY* ini_sections, unsigned i
 
                             Status = systable->BootServices->AllocatePool(EfiLoaderData, len + 1, (void**)&opt->options);
                             if (EFI_ERROR(Status)) {
-                                print_error(L"AllocatePool", Status);
+                                print_error("AllocatePool", Status);
                                 return Status;
                             }
 
@@ -359,7 +382,7 @@ static EFI_STATUS load_ini_file(unsigned int* timeout) {
     Status = bs->OpenProtocol(image_handle, &guid, (void**)&image, image_handle, NULL,
                               EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL);
     if (EFI_ERROR(Status)) {
-        print_error(L"OpenProtocol", Status);
+        print_error("OpenProtocol", Status);
         return Status;
     }
 
@@ -369,13 +392,13 @@ static EFI_STATUS load_ini_file(unsigned int* timeout) {
     Status = bs->OpenProtocol(image->DeviceHandle, &guid2, (void**)&fs, image_handle, NULL,
                               EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL);
     if (EFI_ERROR(Status)) {
-        print_error(L"OpenProtocol", Status);
+        print_error("OpenProtocol", Status);
         goto end2;
     }
 
     Status = open_parent_dir(fs, (FILEPATH_DEVICE_PATH*)image->FilePath, &dir);
     if (EFI_ERROR(Status)) {
-        print_error(L"open_parent_dir", Status);
+        print_error("open_parent_dir", Status);
         goto end;
     }
 
@@ -384,20 +407,20 @@ static EFI_STATUS load_ini_file(unsigned int* timeout) {
     dir->Close(dir);
 
     if (EFI_ERROR(Status)) {
-        print(L"Error opening freeldr.ini.\r\n");
-        print_error(L"read_file", Status);
+        print_string("Error opening freeldr.ini.\n");
+        print_error("read_file", Status);
         goto end;
     }
 
     Status = parse_ini_file(data, &ini_sections);
     if (EFI_ERROR(Status)) {
-        print_error(L"parse_ini_file", Status);
+        print_error("parse_ini_file", Status);
         goto end;
     }
 
     Status = populate_options_from_ini(&ini_sections, timeout);
     if (EFI_ERROR(Status)) {
-        print_error(L"populate_options_from_ini", Status);
+        print_error("populate_options_from_ini", Status);
         goto end;
     }
 
@@ -440,7 +463,7 @@ static EFI_STATUS draw_box(EFI_SIMPLE_TEXT_OUT_PROTOCOL* con, unsigned int x, un
 
     Status = bs->AllocatePool(EfiLoaderData, (w + 1) * sizeof(WCHAR), (void**)&s);
     if (EFI_ERROR(Status)) {
-        print_error(L"AllocatePool", Status);
+        print_error("AllocatePool", Status);
         return Status;
     }
 
@@ -450,7 +473,7 @@ static EFI_STATUS draw_box(EFI_SIMPLE_TEXT_OUT_PROTOCOL* con, unsigned int x, un
     for (unsigned int i = y; i < y + h; i++) {
         Status = con->SetCursorPosition(con, x, i);
         if (EFI_ERROR(Status)) {
-            print_error(L"SetCursorPosition", Status);
+            print_error("SetCursorPosition", Status);
             bs->FreePool(s);
             return Status;
         }
@@ -486,7 +509,7 @@ static EFI_STATUS draw_box(EFI_SIMPLE_TEXT_OUT_PROTOCOL* con, unsigned int x, un
         Status = con->OutputString(con, s);
         if (EFI_ERROR(Status)) {
             con->SetCursorPosition(con, col, row);
-            print_error(L"OutputString", Status);
+            print_error("OutputString", Status);
             bs->FreePool(s);
             return Status;
         }
@@ -508,21 +531,21 @@ static EFI_STATUS draw_option(EFI_SIMPLE_TEXT_OUT_PROTOCOL* con, unsigned int po
 
     Status = con->SetCursorPosition(con, 1, pos + 3);
     if (EFI_ERROR(Status)) {
-        print_error(L"SetCursorPosition", Status);
+        print_error("SetCursorPosition", Status);
         return Status;
     }
 
     if (selected) {
         Status = con->SetAttribute(con, EFI_BLACK | EFI_BACKGROUND_LIGHTGRAY);
         if (EFI_ERROR(Status)) {
-            print_error(L"SetAttribute", Status);
+            print_error("SetAttribute", Status);
             return Status;
         }
     }
 
     Status = bs->AllocatePool(EfiLoaderData, (width + 1) * sizeof(WCHAR), (void**)&s);
     if (EFI_ERROR(Status)) {
-        print_error(L"AllocatePool", Status);
+        print_error("AllocatePool", Status);
         return Status;
     }
 
@@ -540,7 +563,7 @@ static EFI_STATUS draw_option(EFI_SIMPLE_TEXT_OUT_PROTOCOL* con, unsigned int po
 
     Status = con->OutputString(con, s);
     if (EFI_ERROR(Status)) {
-        print_error(L"OutputString", Status);
+        print_error("OutputString", Status);
         bs->FreePool(s);
         return Status;
     }
@@ -548,7 +571,7 @@ static EFI_STATUS draw_option(EFI_SIMPLE_TEXT_OUT_PROTOCOL* con, unsigned int po
     if (selected) { // change back
         Status = con->SetAttribute(con, EFI_LIGHTGRAY | EFI_BACKGROUND_BLACK);
         if (EFI_ERROR(Status)) {
-            print_error(L"SetAttribute", Status);
+            print_error("SetAttribute", Status);
             bs->FreePool(s);
             return Status;
         }
@@ -565,9 +588,9 @@ static EFI_STATUS draw_options(EFI_SIMPLE_TEXT_OUT_PROTOCOL* con, unsigned int c
     // FIXME - paging
 
     for (unsigned int i = 0; i < num_options; i++) {
-        Status = draw_option(con, i, cols - 3, options[i].name, i == selected_option);
+        Status = draw_option(con, i, cols - 3, options[i].namew, i == selected_option);
         if (EFI_ERROR(Status)) {
-            print_error(L"draw_option", Status);
+            print_error("draw_option", Status);
             return Status;
         }
     }
@@ -581,12 +604,91 @@ static EFI_STATUS print_spaces(EFI_SIMPLE_TEXT_OUT_PROTOCOL* con, unsigned int n
     for (unsigned int i = 0; i < num; i++) {
         Status = con->OutputString(con, L" ");
         if (EFI_ERROR(Status)) {
-            print_error(L"OutputString", Status);
+            print_error("OutputString", Status);
             return Status;
         }
     }
 
     return EFI_SUCCESS;
+}
+
+static void print(const WCHAR* s) {
+    systable->ConOut->OutputString(systable->ConOut, (CHAR16*)s);
+}
+
+static void print_dec(uint32_t v) {
+    WCHAR s[12], *p;
+
+    if (v == 0) {
+        print(L"0");
+        return;
+    }
+
+    s[11] = 0;
+    p = &s[11];
+
+    while (v != 0) {
+        p = &p[-1];
+
+        *p = (v % 10) + '0';
+
+        v /= 10;
+    }
+
+    print(p);
+}
+
+static void draw_box_gop(unsigned int x, unsigned int y, unsigned int w, unsigned int h) {
+    uint32_t* base;
+
+    memset((uint32_t*)framebuffer + (y * gop_info.PixelsPerScanLine) + x, 0xff, w * sizeof(uint32_t));
+    memset((uint32_t*)framebuffer + ((y + h) * gop_info.PixelsPerScanLine) + x, 0xff, w * sizeof(uint32_t));
+
+    base = (uint32_t*)framebuffer + ((y + 1) * gop_info.PixelsPerScanLine);
+    for (unsigned int i = 0; i < h - 1; i++) {
+        base[x] = base[x + w - 1] = 0xffffffff;
+        base += gop_info.PixelsPerScanLine;
+    }
+}
+
+static void draw_rect(unsigned int x, unsigned int y, unsigned int w, unsigned int h, uint32_t colour) {
+    uint32_t* base;
+
+    base = (uint32_t*)framebuffer + (y * gop_info.PixelsPerScanLine) + x;
+
+    for (unsigned int i = 0; i < h; i++) {
+        for (unsigned int j = 0; j < w; j++) {
+            base[j] = colour;
+        }
+
+        base += gop_info.PixelsPerScanLine;
+    }
+}
+
+static void draw_option_gop(unsigned int num, const char* name, bool selected) {
+    text_pos p;
+
+    // FIXME - non-TTF
+
+    draw_rect(font_height + 1, (font_height * (num + 3)) + 1 + (font_height / 4),
+              gop_info.HorizontalResolution - (2 * font_height) - 2, font_height,
+              selected ? 0xcccccc : 0x000000);
+
+    p.x = font_height * 3 / 2;
+    p.y = font_height * (num + 4);
+
+    if (selected)
+        draw_text_ft(name, &p, 0xcccccc, 0x000000);
+    else
+        draw_text_ft(name, &p, 0x000000, 0xffffff);
+}
+
+static void draw_options_gop() {
+    // FIXME - paging
+
+    for (unsigned int i = 0; i < num_options; i++) {
+        draw_option_gop(i, options[i].name, i == selected_option);
+    }
 }
 
 EFI_STATUS show_menu(EFI_SYSTEM_TABLE* systable, boot_option** ret) {
@@ -603,89 +705,122 @@ EFI_STATUS show_menu(EFI_SYSTEM_TABLE* systable, boot_option** ret) {
     // prevent the firmware from thinking we're hanging
     Status = systable->BootServices->SetWatchdogTimer(0, 0, 0, NULL);
     if (EFI_ERROR(Status)) {
-        print_error(L"SetWatchdogTimer", Status);
+        print_error("SetWatchdogTimer", Status);
         return Status;
     }
 
-    Status = con->ClearScreen(con);
-    if (EFI_ERROR(Status)) {
-        print_error(L"ClearScreen", Status);
-        return Status;
-    }
+    if (gop_console) {
+        text_pos p;
 
-    Status = con->SetCursorPosition(con, 0, 0);
-    if (EFI_ERROR(Status)) {
-        print_error(L"SetCursorPosition", Status);
-        return Status;
-    }
+        memset(framebuffer, 0, gop_info.PixelsPerScanLine * gop_info.VerticalResolution * 4); // clear screen
 
-    Status = con->OutputString(con, VERSION L"\r\n");
-    if (EFI_ERROR(Status)) {
-        print_error(L"OutputString", Status);
-        return Status;
-    }
+        p.x = 0;
+        p.y = font_height;
 
-    Status = con->OutputString(con, URL L"\r\n");
-    if (EFI_ERROR(Status)) {
-        print_error(L"OutputString", Status);
-        return Status;
-    }
+        draw_text_ft(VERSION "\n", &p, 0x000000, 0xffffff);
+        draw_text_ft(URL "\n", &p, 0x000000, 0xffffff);
+    } else {
+        Status = con->ClearScreen(con);
+        if (EFI_ERROR(Status)) {
+            print_error("ClearScreen", Status);
+            return Status;
+        }
 
-    Status = con->QueryMode(con, con->Mode->Mode, &cols, &rows);
-    if (EFI_ERROR(Status)) {
-        print_error(L"QueryMode", Status);
-        return Status;
+        Status = con->SetCursorPosition(con, 0, 0);
+        if (EFI_ERROR(Status)) {
+            print_error("SetCursorPosition", Status);
+            return Status;
+        }
+
+        Status = con->OutputString(con, VERSIONW L"\r\n");
+        if (EFI_ERROR(Status)) {
+            print_error("OutputString", Status);
+            return Status;
+        }
+
+        Status = con->OutputString(con, URLW L"\r\n");
+        if (EFI_ERROR(Status)) {
+            print_error("OutputString", Status);
+            return Status;
+        }
+
+        Status = con->QueryMode(con, con->Mode->Mode, &cols, &rows);
+        if (EFI_ERROR(Status)) {
+            print_error("QueryMode", Status);
+            return Status;
+        }
     }
 
     // FIXME - BCD support
 
     Status = load_ini_file(&timer);
     if (EFI_ERROR(Status)) {
-        print_error(L"load_ini_file", Status);
+        print_error("load_ini_file", Status);
         return Status;
     }
 
     if (num_options == 0) {
-        print(L"No options found in INI file.\r\n");
+        print_string("No options found in INI file.\n");
         return EFI_ABORTED;
     }
 
     if (timer > 0) {
-        if (cursor_visible)
-            con->EnableCursor(con, false);
+        unsigned int timer_pos;
 
-        Status = draw_box(con, 0, 2, cols - 1, rows - 3);
-        if (EFI_ERROR(Status)) {
-            print_error(L"draw_box", Status);
-            goto end;
+        if (gop_console) {
+            text_pos p;
+            char s[10];
+
+            draw_box_gop(font_height, font_height * 3, gop_info.HorizontalResolution - (font_height * 2), gop_info.VerticalResolution - (font_height * 5));
+
+            draw_options_gop();
+
+            p.x = font_height;
+            p.y = gop_info.VerticalResolution - (font_height * 3 / 4);
+
+            draw_text_ft(timeout_message, &p, 0x000000, 0xffffff);
+
+            timer_pos = p.x;
+
+            dec_to_str(s, timer);
+            draw_text_ft(s, &p, 0x000000, 0xffffff);
+        } else {
+            if (cursor_visible)
+                con->EnableCursor(con, false);
+
+            Status = draw_box(con, 0, 2, cols - 1, rows - 3);
+            if (EFI_ERROR(Status)) {
+                print_error("draw_box", Status);
+                goto end;
+            }
+
+            Status = draw_options(con, cols);
+            if (EFI_ERROR(Status)) {
+                print_error("draw_options", Status);
+                goto end;
+            }
+
+            Status = con->SetCursorPosition(con, 0, rows - 1);
+            if (EFI_ERROR(Status)) {
+                print_error("SetCursorPosition", Status);
+                return Status;
+            }
+
+            print(timeout_messagew);
+            print_dec(timer);
         }
-
-        Status = draw_options(con, cols);
-        if (EFI_ERROR(Status)) {
-            print_error(L"draw_options", Status);
-            goto end;
-        }
-
-        Status = con->SetCursorPosition(con, 0, rows - 1);
-        if (EFI_ERROR(Status)) {
-            print_error(L"SetCursorPosition", Status);
-            return Status;
-        }
-
-        print((WCHAR*)timeout_message);
-        print_dec(timer);
 
         /* The second parameter to CreateEvent was originally TPL_APPLICATION, but some old
          * EFIs ignore the specs and return EFI_INVALID_PARAMETER if you do this. */
         Status = systable->BootServices->CreateEvent(EVT_TIMER, TPL_CALLBACK, NULL, NULL, &evt);
         if (EFI_ERROR(Status)) {
-            print_error(L"CreateEvent", Status);
+            print_error("CreateEvent", Status);
             goto end;
         }
 
         Status = systable->BootServices->SetTimer(evt, TimerPeriodic, one_second);
         if (EFI_ERROR(Status)) {
-            print_error(L"SetTimer", Status);
+            print_error("SetTimer", Status);
             goto end;
         }
 
@@ -699,68 +834,88 @@ EFI_STATUS show_menu(EFI_SYSTEM_TABLE* systable, boot_option** ret) {
 
             Status = systable->BootServices->WaitForEvent(2, events, &index);
             if (EFI_ERROR(Status)) {
-                print_error(L"WaitForEvent", Status);
+                print_error("WaitForEvent", Status);
                 goto end;
             }
 
             if (index == 0) { // timer
                 timer--;
 
-                Status = con->SetCursorPosition(con, (sizeof(timeout_message) - sizeof(WCHAR)) / sizeof(WCHAR), rows - 1);
-                if (EFI_ERROR(Status)) {
-                    print_error(L"SetCursorPosition", Status);
-                    return Status;
-                }
+                if (gop_console) {
+                    text_pos p;
+                    char s[10];
 
-                Status = print_spaces(con, cols - (sizeof(timeout_message) - sizeof(WCHAR)) / sizeof(WCHAR) - 1);
-                if (EFI_ERROR(Status)) {
-                    print_error(L"print_spaces", Status);
-                    return Status;
-                }
+                    p.x = timer_pos;
+                    p.y = gop_info.VerticalResolution - (font_height * 3 / 4);
 
-                Status = con->SetCursorPosition(con, (sizeof(timeout_message) - sizeof(WCHAR)) / sizeof(WCHAR), rows - 1);
-                if (EFI_ERROR(Status)) {
-                    print_error(L"SetCursorPosition", Status);
-                    return Status;
-                }
+                    draw_rect(p.x, p.y - font_height, font_height * 5, font_height * 2, 0x000000);
 
-                print_dec(timer);
+                    dec_to_str(s, timer);
+                    draw_text_ft(s, &p, 0x000000, 0xffffff);
+                } else {
+                    Status = con->SetCursorPosition(con, (sizeof(timeout_message) - sizeof(WCHAR)) / sizeof(WCHAR), rows - 1);
+                    if (EFI_ERROR(Status)) {
+                        print_error("SetCursorPosition", Status);
+                        return Status;
+                    }
+
+                    Status = print_spaces(con, cols - (sizeof(timeout_message) - sizeof(WCHAR)) / sizeof(WCHAR) - 1);
+                    if (EFI_ERROR(Status)) {
+                        print_error("print_spaces", Status);
+                        return Status;
+                    }
+
+                    Status = con->SetCursorPosition(con, (sizeof(timeout_message) - sizeof(WCHAR)) / sizeof(WCHAR), rows - 1);
+                    if (EFI_ERROR(Status)) {
+                        print_error("SetCursorPosition", Status);
+                        return Status;
+                    }
+
+                    print_dec(timer);
+                }
 
                 if (timer == 0) {
                     Status = systable->BootServices->SetTimer(evt, TimerCancel, 0);
                     if (EFI_ERROR(Status)) {
-                        print_error(L"SetTimer", Status);
+                        print_error("SetTimer", Status);
                         goto end;
                     }
 
                     break;
                 }
             } else { // key press
+                unsigned int old_option = selected_option;
+
                 if (!timer_cancelled) {
                     Status = systable->BootServices->SetTimer(evt, TimerCancel, 0);
                     if (EFI_ERROR(Status)) {
-                        print_error(L"SetTimer", Status);
+                        print_error("SetTimer", Status);
                         goto end;
                     }
 
                     timer_cancelled = true;
 
-                    Status = con->SetCursorPosition(con, 0, rows - 1);
-                    if (EFI_ERROR(Status)) {
-                        print_error(L"SetCursorPosition", Status);
-                        return Status;
-                    }
+                    if (gop_console) {
+                        draw_rect(font_height, gop_info.VerticalResolution - (font_height * 7 / 4),
+                                  timer_pos + (font_height * 5), font_height * 2, 0x000000);
+                    } else {
+                        Status = con->SetCursorPosition(con, 0, rows - 1);
+                        if (EFI_ERROR(Status)) {
+                            print_error("SetCursorPosition", Status);
+                            return Status;
+                        }
 
-                    Status = print_spaces(con, cols - 1);
-                    if (EFI_ERROR(Status)) {
-                        print_error(L"print_spaces", Status);
-                        return Status;
+                        Status = print_spaces(con, cols - 1);
+                        if (EFI_ERROR(Status)) {
+                            print_error("print_spaces", Status);
+                            return Status;
+                        }
                     }
                 }
 
                 Status = systable->ConIn->ReadKeyStroke(systable->ConIn, &key);
                 if (EFI_ERROR(Status)) {
-                    print_error(L"ReadKeyStroke", Status);
+                    print_error("ReadKeyStroke", Status);
                     goto end;
                 }
 
@@ -774,47 +929,56 @@ EFI_STATUS show_menu(EFI_SYSTEM_TABLE* systable, boot_option** ret) {
 
                     if (selected_option == num_options)
                         selected_option = 0;
-
-                    Status = draw_options(con, cols);
-                    if (EFI_ERROR(Status)) {
-                        print_error(L"draw_options", Status);
-                        goto end;
-                    }
                 } else if (key.ScanCode == 1) { // up
                     if (selected_option == 0)
                         selected_option = num_options - 1;
                     else
                         selected_option--;
-
-                    Status = draw_options(con, cols);
-                    if (EFI_ERROR(Status)) {
-                        print_error(L"draw_options", Status);
-                        goto end;
-                    }
                 } else if (key.ScanCode == 0x17) // escape
                     return EFI_ABORTED;
+
+                if (key.ScanCode == 1 || key.ScanCode == 2) {
+                    if (gop_console) {
+                        draw_option_gop(old_option, options[old_option].name, false);
+                        draw_option_gop(selected_option, options[selected_option].name, true);
+                    } else {
+                        Status = draw_options(con, cols);
+                        if (EFI_ERROR(Status)) {
+                            print_error("draw_options", Status);
+                            goto end;
+                        }
+                    }
+                }
             }
         } while (true);
     }
 
     *ret = &options[selected_option];
 
-    Status = con->ClearScreen(con);
-    if (EFI_ERROR(Status)) {
-        print_error(L"ClearScreen", Status);
-        goto end;
-    }
+    if (gop_console) {
+        memset(framebuffer, 0, gop_info.PixelsPerScanLine * gop_info.VerticalResolution * 4); // clear screen
+        memset(shadow_fb, 0, gop_info.PixelsPerScanLine * gop_info.VerticalResolution * 4);
 
-    Status = con->SetCursorPosition(con, 0, 0);
-    if (EFI_ERROR(Status)) {
-        print_error(L"SetCursorPosition", Status);
-        goto end;
+        console_pos.x = 0;
+        console_pos.y = font_height;
+    } else {
+        Status = con->ClearScreen(con);
+        if (EFI_ERROR(Status)) {
+            print_error("ClearScreen", Status);
+            goto end;
+        }
+
+        Status = con->SetCursorPosition(con, 0, 0);
+        if (EFI_ERROR(Status)) {
+            print_error("SetCursorPosition", Status);
+            goto end;
+        }
     }
 
     Status = EFI_SUCCESS;
 
 end:
-    if (cursor_visible)
+    if (cursor_visible && !gop_console)
         con->EnableCursor(con, true);
 
     return Status;

@@ -20,6 +20,7 @@
 #include "misc.h"
 #include "peload.h"
 #include "x86.h"
+#include "print.h"
 
 void* apiset;
 unsigned int apisetsize;
@@ -38,7 +39,7 @@ EFI_STATUS load_api_set(EFI_BOOT_SERVICES* bs, LIST_ENTRY* images, EFI_PE_LOADER
 
         Status = add_image(bs, images, L"ApiSetSchema.dll", LoaderSystemCode, L"system32", false, NULL, 0, false);
         if (EFI_ERROR(Status)) {
-            print_error(L"add_image", Status);
+            print_error("add_image", Status);
             return Status;
         }
 
@@ -46,7 +47,7 @@ EFI_STATUS load_api_set(EFI_BOOT_SERVICES* bs, LIST_ENTRY* images, EFI_PE_LOADER
 
         Status = load_image(img, L"ApiSetSchema.dll", pe, *va, dir, cmdline, 0);
         if (EFI_ERROR(Status)) {
-            print_error(L"load_image", Status);
+            print_error("load_image", Status);
             return Status;
         }
 
@@ -63,14 +64,14 @@ EFI_STATUS load_api_set(EFI_BOOT_SERVICES* bs, LIST_ENTRY* images, EFI_PE_LOADER
 
         Status = open_file(dir, &file, L"ApiSetSchema.dll");
         if (EFI_ERROR(Status)) {
-            print(L"Loading of ApiSetSchema.dll failed.\r\n");
-            print_error(L"file open", Status);
+            print_string("Loading of ApiSetSchema.dll failed.\n");
+            print_error("file open", Status);
             return Status;
         }
 
         Status = pe->Load(file, NULL, &dll);
         if (EFI_ERROR(Status)) {
-            print_error(L"PE load", Status);
+            print_error("PE load", Status);
             file->Close(file);
             return Status;
         }
@@ -80,7 +81,7 @@ EFI_STATUS load_api_set(EFI_BOOT_SERVICES* bs, LIST_ENTRY* images, EFI_PE_LOADER
 
     Status = dll->GetSections(dll, &sections, &num_sections);
     if (EFI_ERROR(Status)) {
-        print_error(L"GetSections", Status);
+        print_error("GetSections", Status);
         return Status;
     }
 
@@ -89,7 +90,7 @@ EFI_STATUS load_api_set(EFI_BOOT_SERVICES* bs, LIST_ENTRY* images, EFI_PE_LOADER
     for (unsigned int i = 0; i < num_sections; i++) {
         if (!strcmp(sections[i].Name, ".apiset")) {
             if (sections[i].VirtualSize == 0) {
-                print(L".apiset section size was 0.\r\n");
+                print_string(".apiset section size was 0.\n");
                 return EFI_INVALID_PARAMETER;
             }
 
@@ -101,7 +102,7 @@ EFI_STATUS load_api_set(EFI_BOOT_SERVICES* bs, LIST_ENTRY* images, EFI_PE_LOADER
     }
 
     if (!apiset) {
-        print(L"Could not find .apiset section in ApiSetSchema.dll.\r\n");
+        print_string("Could not find .apiset section in ApiSetSchema.dll.\n");
         return EFI_NOT_FOUND;
     }
 
@@ -111,7 +112,7 @@ EFI_STATUS load_api_set(EFI_BOOT_SERVICES* bs, LIST_ENTRY* images, EFI_PE_LOADER
 
         Status = bs->AllocatePages(AllocateAnyPages, EfiLoaderData, PAGE_COUNT(apisetsize), &addr);
         if (EFI_ERROR(Status)) {
-            print_error(L"AllocatePages", Status);
+            print_error("AllocatePages", Status);
             return Status;
         }
 
@@ -125,7 +126,7 @@ EFI_STATUS load_api_set(EFI_BOOT_SERVICES* bs, LIST_ENTRY* images, EFI_PE_LOADER
 
         Status = add_mapping(bs, mappings, *va, apiset, PAGE_COUNT(apisetsize), LoaderSystemBlock);
         if (EFI_ERROR(Status)) {
-            print_error(L"add_mapping", Status);
+            print_error("add_mapping", Status);
             return Status;
         }
 
@@ -199,8 +200,14 @@ static bool search_api_set_80(WCHAR* dll, WCHAR* newname) {
         return false;
     }
 
-    print(dll);
-    print(L" not found in API set array.\r\n");
+    {
+        char s[255], *p;
+
+        p = stpcpy_utf16(s, dll);
+        p = stpcpy(p, " not found in API set array.\n");
+
+        print_string(s);
+    }
 
     return false;
 }
@@ -267,8 +274,14 @@ static bool search_api_set_81(WCHAR* dll, WCHAR* newname) {
         return false;
     }
 
-    print(dll);
-    print(L" not found in API set array.\r\n");
+    {
+        char s[255], *p;
+
+        p = stpcpy_utf16(s, dll);
+        p = stpcpy(p, " not found in API set array.\n");
+
+        print_string(s);
+    }
 
     return false;
 }
@@ -336,8 +349,14 @@ static bool search_api_set_10(WCHAR* dll, WCHAR* newname) {
         return false;
     }
 
-    print(dll);
-    print(L" not found in API set array.\r\n");
+    {
+        char s[255], *p;
+
+        p = stpcpy_utf16(s, dll);
+        p = stpcpy(p, " not found in API set array.\n");
+
+        print_string(s);
+    }
 
     return false;
 }

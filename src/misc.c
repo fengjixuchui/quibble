@@ -35,9 +35,7 @@ void wcsncpy(WCHAR* dest, const WCHAR* src, size_t n) {
 }
 
 void wcsncat(WCHAR* dest, const WCHAR* src, size_t n) {
-    size_t i = 0;
-
-    while (dest[i] != 0) {
+    while (*dest != 0) {
         if (n == 0)
             return;
 
@@ -57,20 +55,6 @@ size_t wcslen(const WCHAR* s) {
 
     return i;
 }
-
-#ifdef DEBUG_TO_VAR
-#define EFI_QUIBBLE_DEBUG_GUID { 0x94C55CBE, 0xD4B9, 0x43B1, { 0xB0, 0xBE, 0xA0, 0x25, 0x4B, 0xAF, 0x7B, 0x09 } }
-
-void print(const WCHAR* s) {
-    EFI_GUID guid = EFI_QUIBBLE_DEBUG_GUID;
-
-    systable->ConOut->OutputString(systable->ConOut, (CHAR16*)s);
-
-    systable->RuntimeServices->SetVariable(L"debug", &guid,
-                                           EFI_VARIABLE_NON_VOLATILE | EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS | EFI_VARIABLE_APPEND_WRITE,
-                                           wcslen(s) * sizeof(CHAR16), (WCHAR*)s);
-}
-#endif
 
 size_t strlen(const char* s) {
     size_t i = 0;
@@ -268,16 +252,33 @@ void memcpy(void* dest, const void* src, size_t n) {
 
 void* memset(void* s, int c, size_t n) {
     void* orig_s = s;
-    uint32_t v;
 
-    // FIXME - use uint64_t instead if 64-bit CPU
     // FIXME - faster if we make sure we're aligned (also in memcpy)?
+
+#if __INTPTR_WIDTH__ == 64
+    uint64_t v;
+
+    v = 0;
+
+    for (unsigned int i = 0; i < sizeof(uint64_t); i++) {
+        v <<= 8;
+        v |= c & 0xff;
+    }
+
+    while (n >= sizeof(uint64_t)) {
+        *(uint64_t*)s = v;
+
+        s = (uint8_t*)s + sizeof(uint64_t);
+        n -= sizeof(uint64_t);
+    }
+#else
+    uint32_t v;
 
     v = 0;
 
     for (unsigned int i = 0; i < sizeof(uint32_t); i++) {
-        v |= c & 0xff;
         v <<= 8;
+        v |= c & 0xff;
     }
 
     while (n >= sizeof(uint32_t)) {
@@ -286,6 +287,7 @@ void* memset(void* s, int c, size_t n) {
         s = (uint8_t*)s + sizeof(uint32_t);
         n -= sizeof(uint32_t);
     }
+#endif
 
     while (n > 0) {
         *(uint8_t*)s = c;
@@ -297,7 +299,9 @@ void* memset(void* s, int c, size_t n) {
     return orig_s;
 }
 
-void strcpy(char* dest, const char* src) {
+char* strcpy(char* dest, const char* src) {
+    char* orig_dest = dest;
+
     while (*src != 0) {
         *dest = *src;
         src++;
@@ -305,167 +309,8 @@ void strcpy(char* dest, const char* src) {
     }
 
     *dest = 0;
-}
 
-static WCHAR* error_string(EFI_STATUS Status) {
-    switch (Status) {
-        case EFI_SUCCESS:
-            return L"EFI_SUCCESS";
-
-        case EFI_LOAD_ERROR:
-            return L"EFI_LOAD_ERROR";
-
-        case EFI_INVALID_PARAMETER:
-            return L"EFI_INVALID_PARAMETER";
-
-        case EFI_UNSUPPORTED:
-            return L"EFI_UNSUPPORTED";
-
-        case EFI_BAD_BUFFER_SIZE:
-            return L"EFI_BAD_BUFFER_SIZE";
-
-        case EFI_BUFFER_TOO_SMALL:
-            return L"EFI_BUFFER_TOO_SMALL";
-
-        case EFI_NOT_READY:
-            return L"EFI_NOT_READY";
-
-        case EFI_DEVICE_ERROR:
-            return L"EFI_DEVICE_ERROR";
-
-        case EFI_WRITE_PROTECTED:
-            return L"EFI_WRITE_PROTECTED";
-
-        case EFI_OUT_OF_RESOURCES:
-            return L"EFI_OUT_OF_RESOURCES";
-
-        case EFI_VOLUME_CORRUPTED:
-            return L"EFI_VOLUME_CORRUPTED";
-
-        case EFI_VOLUME_FULL:
-            return L"EFI_VOLUME_FULL";
-
-        case EFI_NO_MEDIA:
-            return L"EFI_NO_MEDIA";
-
-        case EFI_MEDIA_CHANGED:
-            return L"EFI_MEDIA_CHANGED";
-
-        case EFI_NOT_FOUND:
-            return L"EFI_NOT_FOUND";
-
-        case EFI_ACCESS_DENIED:
-            return L"EFI_ACCESS_DENIED";
-
-        case EFI_NO_RESPONSE:
-            return L"EFI_NO_RESPONSE";
-
-        case EFI_NO_MAPPING:
-            return L"EFI_NO_MAPPING";
-
-        case EFI_TIMEOUT:
-            return L"EFI_TIMEOUT";
-
-        case EFI_NOT_STARTED:
-            return L"EFI_NOT_STARTED";
-
-        case EFI_ALREADY_STARTED:
-            return L"EFI_ALREADY_STARTED";
-
-        case EFI_ABORTED:
-            return L"EFI_ABORTED";
-
-        case EFI_ICMP_ERROR:
-            return L"EFI_ICMP_ERROR";
-
-        case EFI_TFTP_ERROR:
-            return L"EFI_TFTP_ERROR";
-
-        case EFI_PROTOCOL_ERROR:
-            return L"EFI_PROTOCOL_ERROR";
-
-        case EFI_INCOMPATIBLE_VERSION:
-            return L"EFI_INCOMPATIBLE_VERSION";
-
-        case EFI_SECURITY_VIOLATION:
-            return L"EFI_SECURITY_VIOLATION";
-
-        case EFI_CRC_ERROR:
-            return L"EFI_CRC_ERROR";
-
-        case EFI_END_OF_MEDIA:
-            return L"EFI_END_OF_MEDIA";
-
-        case EFI_END_OF_FILE:
-            return L"EFI_END_OF_FILE";
-
-        case EFI_INVALID_LANGUAGE:
-            return L"EFI_INVALID_LANGUAGE";
-
-        case EFI_COMPROMISED_DATA:
-            return L"EFI_COMPROMISED_DATA";
-
-        default:
-            return L"(unknown error)";
-    }
-}
-
-void print_error(const WCHAR* func, EFI_STATUS Status) {
-    WCHAR s[255];
-
-    wcsncpy(s, func, sizeof(s) / sizeof(WCHAR));
-    wcsncat(s, L" returned ", sizeof(s) / sizeof(WCHAR));
-    wcsncat(s, error_string(Status), sizeof(s) / sizeof(WCHAR));
-    wcsncat(s, L"\r\n", sizeof(s) / sizeof(WCHAR));
-
-    systable->ConOut->OutputString(systable->ConOut, s);
-}
-
-void print_hex(uint64_t v) {
-    WCHAR s[17], *p;
-
-    if (v == 0) {
-        print(L"0");
-        return;
-    }
-
-    s[16] = 0;
-    p = &s[16];
-
-    while (v != 0) {
-        p = &p[-1];
-
-        if ((v & 0xf) >= 10)
-            *p = (v & 0xf) - 10 + 'a';
-        else
-            *p = (v & 0xf) + '0';
-
-        v >>= 4;
-    }
-
-    print(p);
-}
-
-void print_dec(uint32_t v) {
-    WCHAR s[12], *p;
-
-    if (v == 0) {
-        print(L"0");
-        return;
-    }
-
-    s[11] = 0;
-    p = &s[11];
-
-    while (v != 0) {
-        p = &p[-1];
-
-        *p = (v % 10) + '0';
-
-        v /= 10;
-    }
-
-    print(p);
+    return orig_dest;
 }
 
 void itow(int v, WCHAR* w) {
@@ -506,24 +351,6 @@ void itow(int v, WCHAR* w) {
     } while (*p);
 
     *w = 0;
-}
-
-void print_string(const char* s) {
-    WCHAR w[255], *t;
-
-    // FIXME - make sure no overflow
-
-    t = w;
-
-    while (*s) {
-        *t = *s;
-        s++;
-        t++;
-    }
-
-    *t = 0;
-
-    print(w);
 }
 
 EFI_STATUS utf8_to_utf16(WCHAR* dest, unsigned int dest_max, unsigned int* dest_len, const char* src, unsigned int src_len) {
@@ -709,4 +536,360 @@ EFI_STATUS utf16_to_utf8(char* dest, unsigned int dest_max, unsigned int* dest_l
         *dest_len = needed;
 
     return Status;
+}
+
+char* stpcpy(char* dest, const char* src) {
+    while (*src != 0) {
+        *dest = *src;
+        dest++;
+        src++;
+    }
+
+    *dest = 0;
+
+    return dest;
+}
+
+char* hex_to_str(char* s, uint64_t v) {
+    char *end, *p;
+
+    if (v == 0) {
+        *s = '0';
+        s++;
+
+        *s = 0;
+        return s;
+    }
+
+    end = s;
+
+    {
+        uint64_t n = v;
+
+        while (n != 0) {
+            end++;
+            n >>= 4;
+        }
+    }
+
+    *end = 0;
+
+    p = end;
+
+    while (v != 0) {
+        p = &p[-1];
+
+        if ((v & 0xf) >= 10)
+            *p = (v & 0xf) - 10 + 'a';
+        else
+            *p = (v & 0xf) + '0';
+
+        v >>= 4;
+    }
+
+    return end;
+}
+
+char* dec_to_str(char* s, uint64_t v) {
+    char *end, *p;
+
+    if (v == 0) {
+        *s = '0';
+        s++;
+
+        *s = 0;
+        return s;
+    }
+
+    end = s;
+
+    {
+        uint64_t n = v;
+
+        while (n != 0) {
+            end++;
+            n /= 10;
+        }
+    }
+
+    *end = 0;
+
+    p = end;
+
+    while (v != 0) {
+        p = &p[-1];
+        *p = (v % 10) + '0';
+
+        v /= 10;
+    }
+
+    return end;
+}
+
+const char* error_string(EFI_STATUS Status) {
+    switch (Status) {
+        case EFI_SUCCESS:
+            return "EFI_SUCCESS";
+
+        case EFI_LOAD_ERROR:
+            return "EFI_LOAD_ERROR";
+
+        case EFI_INVALID_PARAMETER:
+            return "EFI_INVALID_PARAMETER";
+
+        case EFI_UNSUPPORTED:
+            return "EFI_UNSUPPORTED";
+
+        case EFI_BAD_BUFFER_SIZE:
+            return "EFI_BAD_BUFFER_SIZE";
+
+        case EFI_BUFFER_TOO_SMALL:
+            return "EFI_BUFFER_TOO_SMALL";
+
+        case EFI_NOT_READY:
+            return "EFI_NOT_READY";
+
+        case EFI_DEVICE_ERROR:
+            return "EFI_DEVICE_ERROR";
+
+        case EFI_WRITE_PROTECTED:
+            return "EFI_WRITE_PROTECTED";
+
+        case EFI_OUT_OF_RESOURCES:
+            return "EFI_OUT_OF_RESOURCES";
+
+        case EFI_VOLUME_CORRUPTED:
+            return "EFI_VOLUME_CORRUPTED";
+
+        case EFI_VOLUME_FULL:
+            return "EFI_VOLUME_FULL";
+
+        case EFI_NO_MEDIA:
+            return "EFI_NO_MEDIA";
+
+        case EFI_MEDIA_CHANGED:
+            return "EFI_MEDIA_CHANGED";
+
+        case EFI_NOT_FOUND:
+            return "EFI_NOT_FOUND";
+
+        case EFI_ACCESS_DENIED:
+            return "EFI_ACCESS_DENIED";
+
+        case EFI_NO_RESPONSE:
+            return "EFI_NO_RESPONSE";
+
+        case EFI_NO_MAPPING:
+            return "EFI_NO_MAPPING";
+
+        case EFI_TIMEOUT:
+            return "EFI_TIMEOUT";
+
+        case EFI_NOT_STARTED:
+            return "EFI_NOT_STARTED";
+
+        case EFI_ALREADY_STARTED:
+            return "EFI_ALREADY_STARTED";
+
+        case EFI_ABORTED:
+            return "EFI_ABORTED";
+
+        case EFI_ICMP_ERROR:
+            return "EFI_ICMP_ERROR";
+
+        case EFI_TFTP_ERROR:
+            return "EFI_TFTP_ERROR";
+
+        case EFI_PROTOCOL_ERROR:
+            return "EFI_PROTOCOL_ERROR";
+
+        case EFI_INCOMPATIBLE_VERSION:
+            return "EFI_INCOMPATIBLE_VERSION";
+
+        case EFI_SECURITY_VIOLATION:
+            return "EFI_SECURITY_VIOLATION";
+
+        case EFI_CRC_ERROR:
+            return "EFI_CRC_ERROR";
+
+        case EFI_END_OF_MEDIA:
+            return "EFI_END_OF_MEDIA";
+
+        case EFI_END_OF_FILE:
+            return "EFI_END_OF_FILE";
+
+        case EFI_INVALID_LANGUAGE:
+            return "EFI_INVALID_LANGUAGE";
+
+        case EFI_COMPROMISED_DATA:
+            return "EFI_COMPROMISED_DATA";
+
+        default:
+            return "(unknown error)";
+    }
+}
+
+char* stpcpy_utf16(char* dest, const WCHAR* src) {
+    while (*src) {
+        uint32_t cp = *src;
+
+        if ((cp & 0xfc00) == 0xd800) {
+            if (src[1] == 0 || (src[1] & 0xfc00) != 0xdc00)
+                cp = 0xfffd;
+            else {
+                cp = (cp & 0x3ff) << 10;
+                cp |= src[1] & 0x3ff;
+                cp += 0x10000;
+
+                src++;
+            }
+        } else if ((cp & 0xfc00) == 0xdc00)
+            cp = 0xfffd;
+
+        if (cp > 0x10ffff)
+            cp = 0xfffd;
+
+        if (cp < 0x80) {
+            *dest = (uint8_t)cp;
+            dest++;
+        } else if (cp < 0x800) {
+            *dest = 0xc0 | ((cp & 0x7c0) >> 6);
+            dest++;
+
+            *dest = 0x80 | (cp & 0x3f);
+            dest++;
+        } else if (cp < 0x10000) {
+            *dest = 0xe0 | ((cp & 0xf000) >> 12);
+            dest++;
+
+            *dest = 0x80 | ((cp & 0xfc0) >> 6);
+            dest++;
+
+            *dest = 0x80 | (cp & 0x3f);
+            dest++;
+        } else {
+            *dest = 0xf0 | ((cp & 0x1c0000) >> 18);
+            dest++;
+
+            *dest = 0x80 | ((cp & 0x3f000) >> 12);
+            dest++;
+
+            *dest = 0x80 | ((cp & 0xfc0) >> 6);
+            dest++;
+
+            *dest = 0x80 | (cp & 0x3f);
+            dest++;
+        }
+
+        src++;
+    }
+
+    return dest;
+}
+
+int strncmp(const char* s1, const char* s2, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+        char c1 = s1[i];
+        char c2 = s2[i];
+
+        if (c1 == 0 && c2 == 0)
+            return 0;
+        else if (c1 == 0)
+            return -1;
+        else if (c2 == 0)
+            return 1;
+
+        if (c1 != c2)
+            return c1 > c2 ? 1 : -1;
+
+        i++;
+    }
+
+    return 0;
+}
+
+void memmove(void* dest, const void* src, size_t n) {
+    while (n > 0) {
+        *(uint8_t*)dest = *(uint8_t*)src;
+
+        dest = (uint8_t*)dest + 1;
+        src = (uint8_t*)src + 1;
+
+        n--;
+    }
+}
+
+long int strtol(const char* nptr, char** endptr, int base) {
+    long int val;
+
+    while (*nptr == ' ' || *nptr == '\t') {
+        nptr++;
+    }
+
+    val = 0;
+
+    while (true) {
+        if (*nptr >= '0' && *nptr <= '9') {
+            val *= base;
+            val += *nptr - '0';
+        } else {
+            if (endptr)
+                *endptr = (char*)nptr;
+
+            return val;
+        }
+
+        nptr++;
+    }
+}
+
+char* strcat(char* dest, const char *src) {
+    char* orig_dest = dest;
+
+    while (*dest != 0) {
+        dest++;
+    }
+
+    strcpy(dest, src);
+
+    return orig_dest;
+}
+
+void* memchr(const void* s, int c, size_t n) {
+    uint8_t* ptr = (uint8_t*)s;
+
+    while (n > 0) {
+        if (*ptr == c)
+            return ptr;
+
+        ptr++;
+        n--;
+    }
+
+    return NULL;
+}
+
+char* strstr(const char* haystack, const char* needle) {
+    size_t len = strlen(needle);
+
+    while (true) {
+        bool found = true;
+
+        for (size_t i = 0; i < len; i++) {
+            if (haystack[i] == 0)
+                return NULL;
+
+            if (haystack[i] != needle[i]) {
+                found = false;
+                break;
+            }
+        }
+
+        if (found)
+            return (char*)haystack;
+
+        haystack++;
+    }
+
+    return NULL;
 }
