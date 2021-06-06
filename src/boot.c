@@ -65,6 +65,7 @@ typedef struct {
         LOADER_PARAMETER_EXTENSION_WIN10_1809 extension_win10_1809;
         LOADER_PARAMETER_EXTENSION_WIN10_1903 extension_win10_1903;
         LOADER_PARAMETER_EXTENSION_WIN10_2004 extension_win10_2004;
+        LOADER_PARAMETER_EXTENSION_WIN10_21H1 extension_win10_21H1;
     };
 
     char strings[1024];
@@ -496,7 +497,22 @@ static loader_store* initialize_loader_block(EFI_BOOT_SERVICES* bs, char* option
         store->loader_block_win10.FirmwareInformation.EfiInformation.FirmwareVersion = systable->Hdr.Revision;
         InitializeListHead(&store->loader_block_win10.FirmwareInformation.EfiInformation.FirmwareResourceList);
 
-        if (build >= WIN10_BUILD_2004) {
+        if (build >= WIN10_BUILD_21H1) {
+            extblock1a = &store->extension_win10_21H1.Block1a;
+            extblock1b = &store->extension_win10_21H1.Block1b;
+            extblock1c = &store->extension_win10_21H1.Block1c;
+            extblock2b = &store->extension_win10_21H1.Block2b;
+            extblock3 = &store->extension_win10_21H1.Block3;
+            extblock4 = &store->extension_win10_21H1.Block4;
+            extblock5a = &store->extension_win10_21H1.Block5a;
+            extblock6 = &store->extension_win10_21H1.Block6;
+            store->extension_win10_21H1.Size = sizeof(LOADER_PARAMETER_EXTENSION_WIN10_21H1);
+
+            store->extension_win10_21H1.Profile.Status = 2;
+            store->extension_win10_21H1.BootEntropyResult.maxEntropySources = 10;
+            store->extension_win10_21H1.Block7.MajorRelease = NTDDI_WIN10_20H1;
+            store->extension_win10_21H1.ProcessorCounterFrequency = cpu_frequency;
+        } else if (build >= WIN10_BUILD_2004) {
             extblock1a = &store->extension_win10_2004.Block1a;
             extblock1b = &store->extension_win10_2004.Block1b;
             extblock1c = &store->extension_win10_2004.Block1c;
@@ -509,7 +525,7 @@ static loader_store* initialize_loader_block(EFI_BOOT_SERVICES* bs, char* option
 
             store->extension_win10_2004.Profile.Status = 2;
             store->extension_win10_2004.BootEntropyResult.maxEntropySources = 10;
-            store->extension_win10_2004.MajorRelease = NTDDI_WIN10_20H1;
+            store->extension_win10_2004.Block7.MajorRelease = NTDDI_WIN10_20H1;
             store->extension_win10_2004.ProcessorCounterFrequency = cpu_frequency;
         } else if (build >= WIN10_BUILD_1903) {
             extblock1a = &store->extension_win10_1903.Block1a;
@@ -942,7 +958,14 @@ static void fix_store_mapping(loader_store* store, void* va, LIST_ENTRY* mapping
 
         fix_list_mapping(&store->loader_block_win10.FirmwareInformation.EfiInformation.FirmwareResourceList, mappings);
 
-        if (build >= WIN10_BUILD_2004) {
+        if (build >= WIN10_BUILD_21H1) {
+            extblock1c = &store->extension_win10_21H1.Block1c;
+            extblock2b = &store->extension_win10_21H1.Block2b;
+            extblock3 = &store->extension_win10_21H1.Block3;
+            extblock4 = &store->extension_win10_21H1.Block4;
+            extblock5a = &store->extension_win10_21H1.Block5a;
+            extblock6 = &store->extension_win10_21H1.Block6;
+        } else if (build >= WIN10_BUILD_2004) {
             extblock1c = &store->extension_win10_2004.Block1c;
             extblock2b = &store->extension_win10_2004.Block2b;
             extblock3 = &store->extension_win10_2004.Block3;
@@ -1303,17 +1326,17 @@ static void set_gdt(gdt_entry* gdt) {
 
     // set task register
     __asm__ __volatile__ (
-        "mov ax, %0\n\t"
-        "ltr ax\n\t"
+        "mov %0, %%ax\n\t"
+        "ltr %%ax\n\t"
         :
-        : "" ((uint32_t)KGDT_TSS)
+        : "i" ((uint32_t)KGDT_TSS)
         : "ax"
     );
 
 #ifdef _X86_
     // change cs to 0x8
     __asm__ __volatile__ (
-        "ljmp %0, label\n\t"
+        "ljmp %0,$label\n\t"
         "label:\n\t"
         :
         : "i" (0x8)
@@ -1321,10 +1344,10 @@ static void set_gdt(gdt_entry* gdt) {
 #elif defined(__x86_64__)
     // change cs to 0x10
     __asm__ __volatile__ (
-        "mov rax, %0\n\t"
-        "push rax\n\t"
-        "lea rax, label\n\t"
-        "push rax\n\t"
+        "mov %0, %%rax\n\t"
+        "push %%rax\n\t"
+        "lea label(%%rip), %%rax\n\t"
+        "push %%rax\n\t"
         "lretq\n\t"
         "label:\n\t"
         :
@@ -1334,8 +1357,8 @@ static void set_gdt(gdt_entry* gdt) {
 
     // change ss to 0x18
     __asm__ __volatile__ (
-        "mov ax, %0\n\t"
-        "mov ss, ax\n\t"
+        "mov %0, %%ax\n\t"
+        "mov %%ax, %%ss\n\t"
         :
         : "i" (0x18)
         : "ax"
@@ -3414,7 +3437,7 @@ static EFI_STATUS set_graphics_mode(EFI_BOOT_SERVICES* bs, EFI_HANDLE image_hand
         }
 
         memcpy(&gop_info, gop->Mode->Info, sizeof(EFI_GRAPHICS_OUTPUT_MODE_INFORMATION));
-        framebuffer = (void*)gop->Mode->FrameBufferBase;
+        framebuffer = (void*)(uintptr_t)gop->Mode->FrameBufferBase;
         framebuffer_size = gop->Mode->FrameBufferSize;
 
         bs->CloseProtocol(handles[i], &guid, image_handle, NULL);
@@ -3785,6 +3808,8 @@ static EFI_STATUS boot(EFI_HANDLE image_handle, EFI_BOOT_SERVICES* bs, EFI_FILE_
         version = _WIN32_WINNT_WINBLUE;
     else if (version == 0x0700)
         version = _WIN32_WINNT_WIN7;
+    else if (version ==  _WIN32_WINNT_WIN10 && revision >= 928)
+        build = WIN10_BUILD_21H1;
 
     {
         char s[255], *p;
@@ -4572,9 +4597,9 @@ static EFI_STATUS boot(EFI_HANDLE image_handle, EFI_BOOT_SERVICES* bs, EFI_FILE_
 
 #ifndef _MSC_VER
     __asm__ __volatile__ (
-        "mov rsp, %0\n\t"
-        "lea rcx, %1\n\t"
-        "call %2\n\t"
+        "mov %0, %%rsp\n\t"
+        "lea %1, %%rcx\n\t"
+        "call *%2\n\t"
         :
         : "m" (tss->Rsp0), "m" (store->loader_block), "m" (KiSystemStartup)
         : "rcx"
@@ -4690,44 +4715,44 @@ static EFI_STATUS load_pe_proto(EFI_BOOT_SERVICES* bs, EFI_HANDLE ImageHandle, E
 static void change_stack2(EFI_BOOT_SERVICES* bs, EFI_HANDLE image_handle, void* stack_end, change_stack_cb cb) {
 #ifdef _X86_
     __asm__ __volatile__ (
-        "mov eax, %0\n\t"
-        "mov ebx, %1\n\t"
-        "mov ecx, %3\n\t"
-        "mov edx, esp\n\t"
-        "mov esp, %2\n\t"
-        "push ebp\n\t"
-        "mov ebp, esp\n\t"
-        "push edx\n\t"
-        "push ebx\n\t"
-        "push eax\n\t"
-        "call ecx\n\t"
-        "pop edx\n\t"
-        "pop ebp\n\t"
-        "mov esp, edx\n\t"
+        "mov %0, %%eax\n\t"
+        "mov %1, %%ebx\n\t"
+        "mov %3, %%ecx\n\t"
+        "mov %%esp, %%edx\n\t"
+        "mov %2, %%esp\n\t"
+        "push %%ebp\n\t"
+        "mov %%esp, %%ebp\n\t"
+        "push %%edx\n\t"
+        "push %%ebx\n\t"
+        "push %%eax\n\t"
+        "call *%%ecx\n\t"
+        "pop %%edx\n\t"
+        "pop %%ebp\n\t"
+        "mov %%edx, %%esp\n\t"
         :
-        : "m" (bs), "m" (image_handle), "m" (stack_end), "" (cb)
+        : "m" (bs), "m" (image_handle), "m" (stack_end), "m" (cb)
         : "eax", "ebx", "ecx", "edx"
     );
 #elif defined(__x86_64__)
     // FIXME - probably should restore original rbx
 
     __asm__ __volatile__ (
-        "mov rcx, %0\n\t"
-        "mov rdx, %1\n\t"
-        "mov rax, %3\n\t"
-        "mov rbx, rsp\n\t"
-        "mov rsp, %2\n\t"
-        "push rbp\n\t"
-        "mov rbp, rsp\n\t"
-        "push rbx\n\t"
-        "sub rsp, 32\n\t"
-        "call rax\n\t"
-        "add rsp, 32\n\t"
-        "pop rbx\n\t"
-        "pop rbp\n\t"
-        "mov rsp, rbx\n\t"
+        "mov %0, %%rcx\n\t"
+        "mov %1, %%rdx\n\t"
+        "mov %3, %%rax\n\t"
+        "mov %%rsp, %%rbx\n\t"
+        "mov %2, %%rsp\n\t"
+        "push %%rbp\n\t"
+        "mov %%rsp, %%rbp\n\t"
+        "push %%rbx\n\t"
+        "sub $32, %%rsp\n\t"
+        "call *%%rax\n\t"
+        "add $32, %%rsp\n\t"
+        "pop %%rbx\n\t"
+        "pop %%rbp\n\t"
+        "mov %%rbx, %%rsp\n\t"
         :
-        : "m" (bs), "m" (image_handle), "m" (stack_end), "" (cb)
+        : "m" (bs), "m" (image_handle), "m" (stack_end), "m" (cb)
         : "rax", "rcx", "rdx", "rbx"
     );
 #endif

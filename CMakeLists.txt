@@ -45,7 +45,7 @@ add_subdirectory(freetype)
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 include_directories(freetype/include)
 
-if(${CMAKE_C_COMPILER_ID} STREQUAL "GNU")
+if(${CMAKE_C_COMPILER_ID} STREQUAL "GNU" OR ${CMAKE_C_COMPILER_ID} STREQUAL "Clang")
     target_link_libraries(quibble libgcc.a)
 endif()
 
@@ -70,17 +70,21 @@ elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "X86")
     add_definitions(-D_X86_)
 endif()
 
-if(${CMAKE_C_COMPILER_ID} STREQUAL "GNU")
+if(${CMAKE_C_COMPILER_ID} STREQUAL "GNU" OR ${CMAKE_C_COMPILER_ID} STREQUAL "Clang")
 target_compile_options(quibble PRIVATE "-ffreestanding")
 target_compile_options(quibble PRIVATE "-fno-stack-protector")
 target_compile_options(quibble PRIVATE "-fno-stack-check")
 target_compile_options(quibble PRIVATE "-mno-stack-arg-probe")
-target_compile_options(quibble PRIVATE "-masm=intel")
 
 target_link_options(quibble PRIVATE "-nostdlib")
-target_link_options(quibble PRIVATE "-Wl,-dll")
 target_link_options(quibble PRIVATE "-shared")
-target_link_options(quibble PRIVATE "-Wl,--subsystem,10")
+target_link_options(quibble PRIVATE "-nodefaultlibs")
+
+if(${CMAKE_C_COMPILER_ID} STREQUAL "Clang")
+    target_link_options(quibble PRIVATE "-Wl,--subsystem,efi_application")
+else()
+    target_link_options(quibble PRIVATE "-Wl,--subsystem,10")
+endif()
 
 if (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "X86")
 target_link_options(quibble PRIVATE "-e_efi_main")
@@ -119,24 +123,27 @@ set(SRC_FILES src/btrfs/btrfs.c
 
 add_executable(btrfs ${SRC_FILES})
 
-if(${CMAKE_C_COMPILER_ID} STREQUAL "GNU")
+if(${CMAKE_C_COMPILER_ID} STREQUAL "GNU" OR ${CMAKE_C_COMPILER_ID} STREQUAL "Clang")
     target_link_libraries(btrfs libgcc.a)
 endif()
 
 set_target_properties(btrfs PROPERTIES SUFFIX ".efi")
 
-if(${CMAKE_C_COMPILER_ID} STREQUAL "GNU")
+if(${CMAKE_C_COMPILER_ID} STREQUAL "GNU" OR ${CMAKE_C_COMPILER_ID} STREQUAL "Clang")
 target_compile_options(btrfs PRIVATE "-ffreestanding")
 target_compile_options(btrfs PRIVATE "-fno-stack-protector")
 target_compile_options(btrfs PRIVATE "-fno-stack-check")
 target_compile_options(btrfs PRIVATE "-mno-stack-arg-probe")
 target_compile_options(btrfs PRIVATE "-Werror-implicit-function-declaration")
-target_compile_options(btrfs PRIVATE "-masm=intel")
 
 target_link_options(btrfs PRIVATE "-nostdlib")
-target_link_options(btrfs PRIVATE "-Wl,-dll")
 target_link_options(btrfs PRIVATE "-shared")
-target_link_options(btrfs PRIVATE "-Wl,--subsystem,11")
+
+if(${CMAKE_C_COMPILER_ID} STREQUAL "Clang")
+    target_link_options(btrfs PRIVATE "-Wl,--subsystem,efi_boot_service_driver")
+else()
+    target_link_options(btrfs PRIVATE "-Wl,--subsystem,11")
+endif()
 
 if (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "X86")
 target_link_options(btrfs PRIVATE "-e_efi_main")
